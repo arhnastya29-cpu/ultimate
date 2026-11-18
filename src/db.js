@@ -17,7 +17,8 @@
 
 export const COLLECTIONS = [
   'learningAreas', 'learningItems', 'studySessions', 'flashcards',
-  'goals', 'tasks', 'projects',
+  'goals', 'tasks', 'projects', 'visionItems',
+  'shadowTasks', 'shadowNotes',
   'checkins', 'labTests', 'healthTodos', 'medications', 'medLogs',
   'workouts', 'workoutTemplates',
   'foods', 'meals', 'dayLogs',
@@ -31,7 +32,8 @@ export const COLLECTIONS = [
 export const DEFAULT_SETTINGS = {
   name: '',
   theme: 'dark',           // auto | light | dark — по умолчанию Deep Space
-  themeV: 2,               // версия темы: при смене оформления один раз переключаем на тёмную
+  themeV: 2,
+  visionStatement: '',     // текст «картины будущего» на вкладке Визуализация               // версия темы: при смене оформления один раз переключаем на тёмную
   kcalTarget: 2000,
   proteinTarget: 120,
   fatTarget: 70,

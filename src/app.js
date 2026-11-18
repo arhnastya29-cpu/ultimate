@@ -9,6 +9,7 @@ export const PAGES = [
   { id: 'today',    group: 'Главное',   title: 'Сегодня',          short: 'Сегодня', icon: 'sun',      mod: () => import('./pages/today.js') },
   { id: 'goals',    group: 'Главное',   title: 'Цели и задачи',    short: 'Цели', icon: 'target',   mod: () => import('./pages/goals.js') },
   { id: 'projects', group: 'Главное',   title: 'Проекты',          short: 'Проекты', icon: 'layers',   mod: () => import('./pages/projects.js') },
+  { id: 'shadow',   group: 'Главное',   title: 'Shadow',           short: 'Shadow', icon: 'briefcase', mod: () => import('./pages/shadow.js') },
   { id: 'habits',   group: 'Главное',   title: 'Привычки',         short: 'Привычки', icon: 'repeat',   mod: () => import('./pages/habits.js') },
   { id: 'journal',  group: 'Главное',   title: 'Рефлексия',        short: 'Дневник', icon: 'pen',      mod: () => import('./pages/journal.js') },
   { id: 'learning', group: 'Развитие',  title: 'Обучение',         short: 'Учёба', icon: 'brain',    mod: () => import('./pages/learning.js') },

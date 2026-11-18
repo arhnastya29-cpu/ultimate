@@ -5,10 +5,12 @@ import {
   checkBtn, progressBar, emptyState, sortBy, sum, clamp, plural,
 } from '../ui.js';
 
+import { renderVision, bindVision } from './vision.js';
+
 export const title = 'Цели и задачи';
 
 // ---------- Локальное состояние страницы ----------
-let tab = 'tasks';        // 'tasks' | 'goals'
+let tab = 'tasks';        // 'tasks' | 'goals' | 'vision'
 let day = today();        // выбранный день во вкладке задач
 let horizon = 'all';      // фильтр целей: all | year | quarter | month
 let showDone = false;     // показывать завершённые цели
@@ -354,14 +356,17 @@ export async function render(root, ctx) {
         <div class="seg">
           <button type="button" class="${tab === 'tasks' ? 'active' : ''}" data-action="tab" data-tab="tasks">Задачи</button>
           <button type="button" class="${tab === 'goals' ? 'active' : ''}" data-action="tab" data-tab="goals">Цели</button>
+          <button type="button" class="${tab === 'vision' ? 'active' : ''}" data-action="tab" data-tab="vision">Визуализация</button>
         </div>
         ${tab === 'tasks'
           ? `<button class="btn" data-action="new-task">${icon('plus')} Задача</button>`
-          : `<button class="btn" data-action="new-goal">${icon('plus')} Новая цель</button>`}
+          : tab === 'goals' ? `<button class="btn" data-action="new-goal">${icon('plus')} Новая цель</button>` : ''}
       </div>
     </div>
-    ${tab === 'tasks' ? renderTasks(tasks, goalById, t) : renderGoals(goals, tasks, t)}
+    ${tab === 'tasks' ? renderTasks(tasks, goalById, t) : tab === 'goals' ? renderGoals(goals, tasks, t) : renderVision()}
   </div>`;
+
+  if (tab === 'vision') bindVision(root.firstElementChild, rerender);
 
   const view = root.firstElementChild;
 
