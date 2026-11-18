@@ -38,6 +38,11 @@ export async function render(root, { params, navigate, page }) {
 | `shadowTasks` | задачи от CEO: `title, context, deadline (date|null), priority 1\|2\|3, done, doneAt?, result, receivedAt` |
 | `shadowNotes` | `type: 'advice'\|'note', title, body, date, tags: string[], pinned` |
 | `streams` | направления внутри проекта: `projectId, name, description, status: 'active'\|'paused'\|'done', order` |
+| `people` | `name, type: 'ceo'\|'team'\|'partner'\|'client'\|'other', role, org, tg, email, phone, tags: string[], notes (как работать), color` |
+| `commitments` | обязательства: `personId, direction: 'mine' (я обещала)\|'theirs' (мне обещали), title, due (date|null), notes, done, doneAt?` |
+| `contacts` | журнал контактов: `personId, date, kind: 'meeting'\|'call'\|'chat'\|'other', text, next` — дата последнего контакта считается отсюда |
+| `kbSections` | разделы базы знаний пользователя: `name, icon (emoji), description, order` |
+| `kbPages` | страницы базы знаний: `sectionId, title, body (простая разметка: #, -, **, \`, [[Название]]), tags: string[], pinned` |
 | `tasks` | `title, date (date|null = без даты/инбокс), priority: 1 (высокий)\|2\|3, goalId?, projectId?, streamId?, focusDate? (дата, когда задача в «фокусе дня» на главной, до 3 штук), done bool, doneAt?, notes, estimateMin?, recurring?: 'daily'\|'weekly'\|null` |
 | `checkins` | `date (уникальна), mood 1-5, energy 1-5, stress 1-5, symptoms: string[], weight?, notes` |
 | `labTests` | `date, name, value (number), unit, refLow?, refHigh?, notes` |

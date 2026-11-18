@@ -55,9 +55,13 @@ export async function render(root, { navigate }) {
   for (const g of db.all('goals')) if (g.status === 'active' && g.deadline && g.deadline >= d) upcoming.push({ date: g.deadline, title: g.title, kind: 'дедлайн цели', page: 'goals' });
   for (const x of db.all('shadowTasks')) if (!x.done && x.deadline && x.deadline >= d) upcoming.push({ date: x.deadline, title: x.title, kind: 'задача от CEO', page: 'shadow' });
   for (const x of db.all('healthTodos')) if (!x.done && x.date && x.date >= d) upcoming.push({ date: x.date, title: x.title, kind: x.type === 'appointment' ? 'приём' : 'здоровье', page: 'health' });
+  const personName = (id) => db.get('people', id)?.name || '';
+  for (const c of db.all('commitments')) if (!c.done && c.due && c.due >= d) upcoming.push({ date: c.due, title: `${c.title} · ${personName(c.personId)}`, kind: c.direction === 'mine' ? 'я обещала' : 'мне обещали', page: 'people', params: { id: c.personId } });
+  const commOpen = db.all('commitments').filter(c => !c.done);
+  const commSoon = commOpen.filter(c => c.due && c.due <= addDays(d, 7)).sort((a, b) => a.due.localeCompare(b.due)).slice(0, 5);
   upcoming.sort((a, b) => a.date.localeCompare(b.date));
   const next = upcoming.slice(0, 2);
-  const overdueAll = overdue.length + db.all('shadowTasks').filter(x => !x.done && x.deadline && x.deadline < d).length + db.all('projects').filter(p => p.status !== 'done' && p.deadline && p.deadline < d).length;
+  const overdueAll = overdue.length + db.all('shadowTasks').filter(x => !x.done && x.deadline && x.deadline < d).length + db.all('projects').filter(p => p.status !== 'done' && p.deadline && p.deadline < d).length + commOpen.filter(c => c.due && c.due < d).length;
 
   // ---------- Привычки ----------
   const habits = db.all('habits').filter(h => !h.archived && (!h.days?.length || h.days.includes(wd))).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
@@ -178,6 +182,10 @@ export async function render(root, { navigate }) {
             </div>`;
           }).join('')}</div>` : '<div class="muted small">Ближайших дедлайнов нет. Можно выдохнуть.</div>'}
         </div>` },
+    { id: 'people', title: 'Обязательства', col: 2, html: commSoon.length ? `<div class="card">
+          <div class="section-title"><h2>${icon('users')} Обязательства</h2><button class="link" data-go="people">все</button></div>
+          <div class="list">${commSoon.map(c => `<div class="list-item" style="padding:7px 0"><div class="main"><div class="title small">${esc(c.title)}</div><div class="sub"><span class="pill ${c.direction === 'mine' ? 'accent' : 'gold'}">${c.direction === 'mine' ? 'я обещала' : 'мне обещали'}</span> ${esc(personName(c.personId))}</div></div><span class="tiny ${c.due < d ? 'bad' : 'muted'}">${esc(fmtDate(c.due))}</span></div>`).join('')}</div>
+        </div>` : '' },
     { id: 'shadow', title: 'Shadow: задачи от CEO', col: 2, html: shadowOpen.length ? `<div class="card">
           <div class="section-title"><h2>${icon('briefcase')} Shadow</h2><button class="link" data-go="shadow">открыть</button></div>
           <div class="list">${shadowOpen.map(x => `<div class="list-item" style="padding:7px 0"><div class="main"><div class="title small">${esc(x.title)}</div></div>${x.deadline ? `<span class="tiny ${x.deadline < d ? 'bad' : 'muted'}">${esc(fmtDate(x.deadline))}</span>` : ''}</div>`).join('')}</div>

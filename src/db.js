@@ -19,6 +19,8 @@ export const COLLECTIONS = [
   'learningAreas', 'learningItems', 'studySessions', 'flashcards',
   'goals', 'tasks', 'projects', 'streams', 'visionItems',
   'shadowTasks', 'shadowNotes',
+  'people', 'commitments', 'contacts',
+  'kbSections', 'kbPages',
   'checkins', 'labTests', 'healthTodos', 'medications', 'medLogs',
   'workouts', 'workoutTemplates',
   'foods', 'meals', 'dayLogs',

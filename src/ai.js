@@ -88,6 +88,20 @@ export function buildContext(pageId) {
     if (notes.length) L.push('Наблюдения о нём:\n' + notes.map(n => `- ${n.pinned ? '★ ' : ''}${cut(n.title, 80)}${n.body ? `: ${cut(n.body, 160)}` : ''}`).join('\n'));
   }
 
+  // Люди и обязательства
+  const people = db.all('people');
+  const comms = db.all('commitments').filter(c => !c.done);
+  if (people.length) {
+    const lastOf = (id) => { const l = db.where('contacts', c => c.personId === id).map(c => c.date).sort(); return l.length ? l[l.length - 1] : null; };
+    L.push(`\n## Люди\n` + people.slice(0, 15).map(p => {
+      const mine = comms.filter(c => c.personId === p.id && c.direction === 'mine'), theirs = comms.filter(c => c.personId === p.id && c.direction === 'theirs');
+      const last = lastOf(p.id);
+      return `- [id ${p.id}] ${cut(p.name, 40)}${p.role ? ` · ${cut(p.role, 40)}` : ''} (${p.type})${last ? ` · последний контакт ${last}` : ' · контактов не было'}${mine.length ? ` · я обещала: ${mine.map(c => `${cut(c.title, 50)}${c.due ? ` до ${c.due}` : ''}`).join('; ')}` : ''}${theirs.length ? ` · мне обещали: ${theirs.map(c => `${cut(c.title, 50)}${c.due ? ` до ${c.due}` : ''}`).join('; ')}` : ''}${p.notes ? ` · как работать: ${cut(p.notes, 120)}` : ''}`;
+    }).join('\n'));
+  }
+  const kbSections = db.all('kbSections');
+  if (kbSections.length) L.push(`\n## База знаний\n` + kbSections.map(sec => `- ${sec.icon || ''} ${cut(sec.name, 40)}: ${db.where('kbPages', pg => pg.sectionId === sec.id).slice(0, 8).map(pg => cut(pg.title, 40)).join(', ') || 'пусто'}`).join('\n'));
+
   // Привычки
   const habits = db.all('habits').filter(h => !h.archived);
   if (habits.length) {
@@ -154,6 +168,10 @@ const TOOLS = [
     input_schema: { type: 'object', properties: { projectId: { type: 'string' }, text: { type: 'string' }, progress: { type: 'integer' } }, required: ['projectId', 'text'] } },
   { name: 'add_goal', description: 'Создать новую цель.',
     input_schema: { type: 'object', properties: { title: { type: 'string' }, description: { type: 'string' }, horizon: { type: 'string', enum: ['year', 'quarter', 'month'] }, deadline: { type: 'string' }, areaKey: { type: 'string', enum: ['career', 'health', 'learning', 'finance', 'relations', 'personal'] } }, required: ['title'] } },
+  { name: 'add_commitment', description: 'Записать обязательство: что я обещала человеку (direction=mine) или что он обещал мне (direction=theirs). personId — из контекста раздела «Люди».',
+    input_schema: { type: 'object', properties: { personId: { type: 'string' }, direction: { type: 'string', enum: ['mine', 'theirs'] }, title: { type: 'string' }, due: { type: 'string', description: 'YYYY-MM-DD или пусто' } }, required: ['personId', 'direction', 'title'] } },
+  { name: 'log_contact', description: 'Записать контакт с человеком (встреча, созвон, переписка): о чём говорили и следующий шаг. Обновляет дату последнего контакта.',
+    input_schema: { type: 'object', properties: { personId: { type: 'string' }, text: { type: 'string' }, next: { type: 'string' }, kind: { type: 'string', enum: ['meeting', 'call', 'chat', 'other'] } }, required: ['personId', 'text'] } },
   { name: 'write_journal', description: 'Записать или дополнить дневник за сегодня. Передавайте только те поля, которые пользователь попросил записать.',
     input_schema: { type: 'object', properties: { highlight: { type: 'string' }, wentWell: { type: 'string' }, improve: { type: 'string' }, gratitude: { type: 'string' }, lessons: { type: 'string' }, mood: { type: 'integer', description: '1-5' } } } },
 ];
@@ -193,6 +211,16 @@ function runTool(name, input) {
       const rec = db.add('goals', { title: String(input.title || '').trim(), description: input.description || '', areaKey: input.areaKey || 'personal', horizon: input.horizon || 'quarter', deadline: input.deadline || null, status: 'active', keyResults: [], progress: 0 });
       return `Цель создана: «${rec.title}».`;
     }
+    case 'add_commitment': {
+      const p = db.get('people', input.personId); if (!p) return 'Ошибка: человек не найден.';
+      const rec = db.add('commitments', { personId: p.id, direction: input.direction === 'theirs' ? 'theirs' : 'mine', title: String(input.title || '').trim(), due: input.due || null, notes: '', done: false, doneAt: null });
+      return `${rec.direction === 'mine' ? 'Записано обещание' : 'Записано, что обещали'}: «${rec.title}» (${p.name})${rec.due ? ` до ${rec.due}` : ''}.`;
+    }
+    case 'log_contact': {
+      const p = db.get('people', input.personId); if (!p) return 'Ошибка: человек не найден.';
+      db.add('contacts', { personId: p.id, date: t, kind: input.kind || 'other', text: String(input.text || '').trim(), next: input.next || '' });
+      return `Контакт с ${p.name} записан.`;
+    }
     case 'write_journal': {
       const fields = ['highlight', 'wentWell', 'improve', 'gratitude', 'lessons'];
       const patch = {}; for (const f of fields) if (input[f]) patch[f] = String(input[f]);
@@ -208,7 +236,7 @@ function runTool(name, input) {
 // ---------- системный промпт ----------
 function systemPrompt(pageId) {
   const s = db.settings();
-  return `Ты — личный помощник в приложении ULTIMATE, персональной системе эффективности${s.name ? ` пользователя по имени ${s.name}` : ''}. Разделы приложения: Сегодня, Цели и задачи (с доской визуализации), Проекты (со стримами и задачами), Shadow (работа с CEO: его задачи, рекомендации, наблюдения), Привычки, Рефлексия (дневник и недельные обзоры), Обучение, Книги, Здоровье, Тренировки, Питание, Сон, Финансы.
+  return `Ты — личный помощник в приложении ULTIMATE, персональной системе эффективности${s.name ? ` пользователя по имени ${s.name}` : ''}. Разделы приложения: Сегодня, Цели и задачи (с доской визуализации), Проекты (со стримами и задачами), Shadow (работа с CEO: его задачи, рекомендации, наблюдения), Люди (команда, партнёры, обязательства в обе стороны, журнал контактов), База знаний (разделы пользователя), Привычки, Рефлексия (дневник и недельные обзоры), Обучение, Книги, Здоровье, Тренировки, Питание, Сон, Финансы.
 
 Ниже дана выжимка реальных данных пользователя на сегодня. Опирайся только на неё и на то, что пользователь пишет; ничего не выдумывай. Если данных не хватает — скажи, чего именно, и задай один точный вопрос.
 
@@ -216,7 +244,7 @@ function systemPrompt(pageId) {
 
 Для раздела Shadow: помогай готовиться к разговорам с CEO, опираясь на записанные рекомендации и наблюдения; формулируй, как лучше подать вопрос или результат именно этому человеку.
 
-Действия: у тебя есть инструменты для записи в приложение (добавить задачу, отметить выполненной, отметить привычку, записать в Shadow, в журнал проекта, в дневник, создать цель). Используй их, когда пользователь прямо просит что-то записать, добавить или отметить. После действия коротко подтверди, что сделано. Не создавай записи без явной просьбы.
+Действия: у тебя есть инструменты для записи в приложение (добавить задачу, отметить выполненной, отметить привычку, записать в Shadow, в журнал проекта, в дневник, создать цель, записать обязательство или контакт с человеком). Используй их, когда пользователь прямо просит что-то записать, добавить или отметить. После действия коротко подтверди, что сделано. Не создавай записи без явной просьбы.
 
 Открыт раздел: ${pageId}.`;
 }
@@ -342,6 +370,8 @@ export function quickPrompts(pageId) {
     finance: ['Куда уходят деньги в этом месяце?', 'Где можно сократить расходы?'],
     learning: ['Как распределить учёбу на неделю?'],
     notes: ['Какие идеи из заметок стоит применить на этой неделе?', 'Сведи мои заметки по теме в выводы'],
+    people: ['Кому я давно не писала и что обещала?', 'Какие обещания горят на этой неделе?', 'Как построить разговор с этим человеком?'],
+    kb: ['Чего не хватает в базе знаний по моей роли?', 'Собери оглавление для нового раздела'],
   };
   return map[pageId] || ['Что мне стоит сделать сегодня?', 'Дай три совета по моей ситуации'];
 }
