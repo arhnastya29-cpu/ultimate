@@ -69,6 +69,7 @@
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; }
 html, body { height: 100%; }
+html { background: var(--bg); }
 body {
   margin: 0; background: var(--bg); color: var(--fg);
   font-family: var(--font-body); font-size: 14.5px; line-height: 1.5;
@@ -133,6 +134,7 @@ svg[aria-hidden="true"] { width: 1em; height: 1em; vertical-align: -0.15em; flex
 #sidebar .indicator { position: absolute; left: 0; width: 100%; height: 38px; border-radius: 8px; background: var(--accent-soft); z-index: 0; transition: transform .35s var(--spring), opacity .2s; pointer-events: none; opacity: 0; }
 .nav-item { position: relative; z-index: 1; display: flex; align-items: center; gap: 11px; padding: 9px 12px; height: 38px; border-radius: 8px; color: var(--fg-2); font-weight: 500; font-size: 13.5px; transition: color .2s, background .2s; }
 .nav-item svg { width: 17px; height: 17px; flex-shrink: 0; transition: transform .25s var(--spring); }
+.nav-item .t-short, .nav-more { display: none; }
 .nav-item:hover { color: var(--fg); }
 .nav-item:hover svg { transform: translateY(-1px) scale(1.08); }
 .nav-item.active { color: var(--accent); font-weight: 600; }
@@ -143,16 +145,6 @@ svg[aria-hidden="true"] { width: 1em; height: 1em; vertical-align: -0.15em; flex
 .theme-toggle svg { width: 16px; height: 16px; }
 #main { min-width: 0; }
 #page { max-width: 1120px; margin: 0 auto; padding: 36px 40px 80px; }
-
-@media (max-width: 860px) {
-  #app { grid-template-columns: 1fr; }
-  #sidebar { position: fixed; inset: auto 0 0 0; height: auto; flex-direction: row; padding: 6px 6px calc(8px + env(safe-area-inset-bottom, 0px)); border-right: 0; border-top: 1px solid var(--line); overflow-x: auto; gap: 2px; z-index: 20; }
-  #sidebar nav { flex-direction: row; }
-  #sidebar .brand, #sidebar .group, #sidebar .foot, #sidebar .indicator { display: none; }
-  .nav-item { flex-direction: column; gap: 3px; font-size: 10px; padding: 6px 8px; min-width: 64px; height: auto; text-align: center; }
-  .nav-item svg { width: 21px; height: 21px; }
-  #page { padding: 20px 16px 110px; }
-}
 
 /* ---------- Page furniture ---------- */
 .page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 14px; margin-bottom: 26px; flex-wrap: wrap; }
@@ -313,7 +305,23 @@ svg[aria-hidden="true"] { width: 1em; height: 1em; vertical-align: -0.15em; flex
 .modal-foot .left { margin-right: auto; }
 @keyframes fade { from { opacity: 0 } to { opacity: 1 } }
 @keyframes pop { from { transform: translateY(14px) scale(.97); opacity: 0 } to { transform: none; opacity: 1 } }
-@media (max-width: 600px) { .modal-backdrop { align-items: flex-end; padding: 0; } .modal { border-radius: 22px 22px 0 0; max-height: 92vh; } }
+@media (max-width: 600px) {
+  .modal-backdrop { align-items: flex-end; padding: 0; }
+  .modal { border-radius: 20px 20px 0 0; max-height: 92vh; border-bottom: 0; }
+  .modal-foot { padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px)); }
+}
+/* ---------- Шторка «Ещё» (разделы на телефоне) ---------- */
+.sheet { padding: 8px 16px 0; }
+.sheet-handle { width: 36px; height: 4px; border-radius: 4px; background: var(--line-2); margin: 4px auto 10px; }
+.sheet-group { font-size: 10.5px; text-transform: uppercase; letter-spacing: .12em; color: var(--fg-3); font-weight: 600; padding: 10px 2px 8px; }
+.sheet-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.sheet-tile { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 12px 4px 10px; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--line); color: var(--fg-2); font-size: 11px; font-weight: 500; text-align: center; transition: background .2s, color .2s; }
+.sheet-tile svg { width: 22px; height: 22px; }
+.sheet-tile.active { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
+.sheet-tile:active { background: var(--surface-3); }
+.sheet-foot { padding: 14px 0 calc(14px + env(safe-area-inset-bottom, 0px)); }
+.sheet-backdrop.closing { animation: fade .18s reverse forwards; }
+.sheet-backdrop.closing .modal { animation: pop .18s reverse forwards; }
 
 /* ---------- Toasts ---------- */
 #toasts { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 8px; z-index: 200; pointer-events: none; }
@@ -392,3 +400,46 @@ details.acc > summary::-webkit-details-marker { display: none; }
 
 /* ---------- Конфетти ---------- */
 #confetti { position: fixed; inset: 0; pointer-events: none; z-index: 400; }
+
+/* ---------- Мобильная версия (в конце файла, чтобы перекрывать общие правила) ---------- */
+@media (max-width: 860px) {
+  #app { grid-template-columns: 1fr; }
+  /* Нижняя панель: 4 главные вкладки + «Ещё». Учитываем «бровь» и жест «домой» на iPhone. */
+  #sidebar { position: fixed; inset: auto 0 0 0; height: auto; flex-direction: row; padding: 6px 4px calc(6px + env(safe-area-inset-bottom, 0px)); border-right: 0; border-top: 1px solid var(--line); overflow: visible; gap: 0; z-index: 20; }
+  #sidebar nav { flex-direction: row; width: 100%; }
+  #sidebar .brand, #sidebar .group, #sidebar .foot, #sidebar .indicator, .nav-secondary, .nav-item .t-full { display: none; }
+  .nav-item, .nav-more { display: flex; flex: 1 1 0; flex-direction: column; gap: 4px; font-size: 10.5px; padding: 6px 2px; min-width: 0; height: auto; text-align: center; border: 0; background: none; border-radius: 10px; font-weight: 500; }
+  .nav-item .t-short { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+  .nav-item.nav-secondary { display: none; }
+  .nav-item svg, .nav-more svg { width: 22px; height: 22px; }
+  .nav-item.active svg { filter: drop-shadow(0 0 6px var(--accent)); }
+  .nav-item:hover svg { transform: none; }
+  /* Контент: отступ под статус-бар сверху и под панель снизу */
+  #page { padding: calc(18px + env(safe-area-inset-top, 0px)) 16px calc(92px + env(safe-area-inset-bottom, 0px)); }
+  /* Шапка страницы: заголовок не режется, кнопки действий во всю ширину */
+  .page-head { flex-direction: column; align-items: stretch; gap: 12px; margin-bottom: 18px; }
+  .page-head h1 { font-size: 28px; overflow-wrap: anywhere; }
+  .page-head .actions { width: 100%; }
+  .page-head .actions .btn { flex: 1 1 auto; justify-content: center; min-height: 42px; }
+  /* Подсказки-чипы уходят за край — показываем это мягким затуханием */
+  .chips { margin: 0 -16px; padding: 0 16px 4px; mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent); -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent); }
+  .chip { padding: 9px 14px; }
+  /* Поля ввода ≥16px, иначе iPhone приближает экран при фокусе */
+  .field input, .field select, .field textarea, .input, .inline-input, input[type="date"].input { font-size: 16px !important; }
+  .field input, .field select, .input { min-height: 46px; }
+  /* Крупнее цели для пальца */
+  .icon-btn.sm { width: 36px; height: 36px; } .icon-btn.sm svg { width: 16px; height: 16px; }
+  .check { width: 28px; height: 28px; } .check svg { width: 14px; height: 14px; }
+  .btn.sm { padding: 8px 12px; min-height: 36px; }
+  .list-item { padding: 12px 6px; gap: 10px; }
+  .section-title { margin: 20px 0 10px; }
+  .card { padding: 16px; }
+}
+@media (max-width: 600px) {
+  /* Строка привычки: дни недели переносятся на вторую строку, чтобы название не сжималось */
+  .list-item { flex-wrap: wrap; }
+  .list-item .week-dots { order: 10; flex-basis: 100%; padding: 6px 0 0 48px; }
+  .week-dots i { width: 24px; height: 24px; border-radius: 7px; font-size: 10px; }
+  .stat { padding: 14px 14px; }
+  .stat .value { font-size: 22px; }
+}

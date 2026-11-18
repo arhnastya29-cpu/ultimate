@@ -1,24 +1,25 @@
 import { db } from './db.js';
-import { esc, icon, toast } from './ui.js';
+import { esc, icon, toast, el } from './ui.js';
 import { afterRender, watchCelebrations, openCommandPalette } from './fx.js';
 
 // Реестр страниц. Каждая страница — модуль, экспортирующий { title, render(root) }.
 // render может вернуть функцию очистки. На любое изменение данных страница перерисовывается.
 export const PAGES = [
-  { id: 'today',    group: 'Главное',   title: 'Сегодня',          icon: 'sun',      mod: () => import('./pages/today.js') },
-  { id: 'goals',    group: 'Главное',   title: 'Цели и задачи',    icon: 'target',   mod: () => import('./pages/goals.js') },
-  { id: 'habits',   group: 'Главное',   title: 'Привычки',         icon: 'repeat',   mod: () => import('./pages/habits.js') },
-  { id: 'journal',  group: 'Главное',   title: 'Рефлексия',        icon: 'pen',      mod: () => import('./pages/journal.js') },
-  { id: 'learning', group: 'Развитие',  title: 'Обучение',         icon: 'brain',    mod: () => import('./pages/learning.js') },
-  { id: 'books',    group: 'Развитие',  title: 'Книги и заметки',  icon: 'library',  mod: () => import('./pages/books.js') },
-  { id: 'health',   group: 'Тело',      title: 'Здоровье',         icon: 'heart',    mod: () => import('./pages/health.js') },
-  { id: 'workouts', group: 'Тело',      title: 'Тренировки',       icon: 'dumbbell', mod: () => import('./pages/workouts.js') },
+  { id: 'today',    group: 'Главное',   title: 'Сегодня',          short: 'Сегодня', icon: 'sun',      mod: () => import('./pages/today.js') },
+  { id: 'goals',    group: 'Главное',   title: 'Цели и задачи',    short: 'Цели', icon: 'target',   mod: () => import('./pages/goals.js') },
+  { id: 'habits',   group: 'Главное',   title: 'Привычки',         short: 'Привычки', icon: 'repeat',   mod: () => import('./pages/habits.js') },
+  { id: 'journal',  group: 'Главное',   title: 'Рефлексия',        short: 'Дневник', icon: 'pen',      mod: () => import('./pages/journal.js') },
+  { id: 'learning', group: 'Развитие',  title: 'Обучение',         short: 'Учёба', icon: 'brain',    mod: () => import('./pages/learning.js') },
+  { id: 'books',    group: 'Развитие',  title: 'Книги и заметки',  short: 'Книги', icon: 'library',  mod: () => import('./pages/books.js') },
+  { id: 'health',   group: 'Тело',      title: 'Здоровье',         short: 'Здоровье', icon: 'heart',    mod: () => import('./pages/health.js') },
+  { id: 'workouts', group: 'Тело',      title: 'Тренировки',       short: 'Спорт', icon: 'dumbbell', mod: () => import('./pages/workouts.js') },
   { id: 'nutrition',group: 'Тело',      title: 'Питание',          icon: 'utensils', mod: () => import('./pages/nutrition.js') },
-  { id: 'sleep',    group: 'Тело',      title: 'Сон и энергия',    icon: 'moon',     mod: () => import('./pages/sleep.js') },
-  { id: 'finance',  group: 'Ресурсы',   title: 'Финансы',          icon: 'wallet',   mod: () => import('./pages/finance.js') },
-  { id: 'settings', group: 'Ресурсы',   title: 'Настройки',        icon: 'settings', mod: () => import('./pages/settings.js') },
+  { id: 'sleep',    group: 'Тело',      title: 'Сон и энергия',    short: 'Сон', icon: 'moon',     mod: () => import('./pages/sleep.js') },
+  { id: 'finance',  group: 'Ресурсы',   title: 'Финансы',          short: 'Финансы', icon: 'wallet',   mod: () => import('./pages/finance.js') },
+  { id: 'settings', group: 'Ресурсы',   title: 'Настройки',        short: 'Настройки', icon: 'settings', mod: () => import('./pages/settings.js') },
 ];
 
+const MOBILE_TABS = 4; // первые N разделов — вкладки внизу экрана телефона, остальные в «Ещё»
 const sidebar = document.getElementById('sidebar');
 let pageRoot = document.getElementById('page');
 let current = null;      // { id, cleanup }
@@ -43,14 +44,32 @@ function isDark() {
 function renderSidebar(activeId) {
   let html = `<div class="brand"><span class="logo"></span>ULTIMATE</div><nav><div class="indicator"></div>`;
   let lastGroup = null;
-  for (const p of PAGES) {
+  PAGES.forEach((p, i) => {
     if (p.group !== lastGroup) { html += `<div class="group">${esc(p.group)}</div>`; lastGroup = p.group; }
-    html += `<a class="nav-item ${p.id === activeId ? 'active' : ''}" href="#/${p.id}" data-page="${p.id}">${icon(p.icon)}<span>${esc(p.title)}</span></a>`;
-  }
+    html += `<a class="nav-item ${p.id === activeId ? 'active' : ''} ${i >= MOBILE_TABS ? 'nav-secondary' : ''}" href="#/${p.id}" data-page="${p.id}">${icon(p.icon)}<span class="t-full">${esc(p.title)}</span><span class="t-short">${esc(p.short || p.title)}</span></a>`;
+  });
+  const moreActive = PAGES.findIndex(p => p.id === activeId) >= MOBILE_TABS;
+  html += `<button type="button" class="nav-item nav-more ${moreActive ? 'active' : ''}" data-more>${icon('more')}<span class="t-short">Ещё</span></button>`;
   html += `</nav><div class="foot"><span class="hint"><span class="kbd">⌘K</span> команды</span><button class="theme-toggle" type="button" aria-label="Переключить тему" title="Переключить тему">${icon(isDark() ? 'sun' : 'moon')}</button></div>`;
   sidebar.innerHTML = html;
   sidebar.querySelector('.theme-toggle').addEventListener('click', () => db.setSettings({ theme: isDark() ? 'light' : 'dark' }));
+  sidebar.querySelector('[data-more]').addEventListener('click', () => openMoreSheet(activeId));
   moveIndicator(activeId);
+}
+
+// Шторка «Ещё» на телефоне: все разделы плиткой, по группам.
+function openMoreSheet(activeId) {
+  let lastGroup = null, body = '';
+  for (const p of PAGES) {
+    if (p.group !== lastGroup) { body += `${lastGroup ? '</div>' : ''}<div class="sheet-group">${esc(p.group)}</div><div class="sheet-grid">`; lastGroup = p.group; }
+    body += `<a class="sheet-tile ${p.id === activeId ? 'active' : ''}" href="#/${p.id}">${icon(p.icon)}<span>${esc(p.short || p.title)}</span></a>`;
+  }
+  body += '</div>';
+  const wrap = el(`<div class="modal-backdrop sheet-backdrop"><div class="modal sheet" role="dialog" aria-label="Все разделы"><div class="sheet-handle"></div>${body}
+    <div class="sheet-foot"><button type="button" class="btn secondary block" data-close>Закрыть</button></div></div></div>`);
+  const close = () => { wrap.classList.add('closing'); setTimeout(() => wrap.remove(), 180); };
+  wrap.addEventListener('click', (e) => { if (e.target === wrap || e.target.closest('[data-close]') || e.target.closest('.sheet-tile')) close(); });
+  document.getElementById('modals').appendChild(wrap);
 }
 
 function moveIndicator(activeId) {
