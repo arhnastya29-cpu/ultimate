@@ -32,6 +32,7 @@ export function openTaskModal(task, { defaults = {}, lockProject = false } = {})
         field({ name: 'recurring', label: 'Повтор', type: 'select', value: x.recurring || '', options: [['', 'Нет'], ['daily', 'Ежедневно'], ['weekly', 'Еженедельно']] }),
       )}
       ${field({ name: 'notes', label: 'Заметки', type: 'textarea', value: x.notes || '', rows: 3 })}
+      ${field({ name: 'timeless', label: 'Бессрочно — задача без дедлайна, живёт в отдельном списке', type: 'checkbox', value: !!x.timeless })}
     </div>`,
     onOpen: (wrap) => {
       const sel = wrap.querySelector('select[name="projectId"]');
@@ -45,7 +46,7 @@ export function openTaskModal(task, { defaults = {}, lockProject = false } = {})
       const projectId = d.projectId || null;
       const streamId = projectId && d.streamId && db.get('streams', d.streamId)?.projectId === projectId ? d.streamId : null;
       const patch = {
-        title: d.title.trim(), date: d.date || null, priority: Number(d.priority) || 2,
+        title: d.title.trim(), date: d.timeless ? null : (d.date || null), priority: Number(d.priority) || 2, timeless: !!d.timeless,
         goalId: d.goalId || null, projectId, streamId, estimateMin: d.estimateMin ?? null,
         notes: d.notes || '', recurring: d.recurring || null,
       };

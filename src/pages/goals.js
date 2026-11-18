@@ -143,12 +143,13 @@ function openWeeklyReviewModal(weekStart) {
 }
 
 // ---------- Фрагменты разметки ----------
-function taskRow(x, goalById, { overdue = false, inbox = false } = {}) {
+function taskRow(x, goalById, { overdue = false, inbox = false, timeless = false } = {}) {
   const g = x.goalId ? goalById(x.goalId) : null;
   const p = x.projectId ? db.get('projects', x.projectId) : null;
   const sub = [
     priPill(x.priority),
     p ? `<a class="pill accent ellipsis" style="max-width:180px" href="#/projects?id=${esc(p.id)}" title="Открыть проект">${esc(p.name)}</a>` : '<span class="tag faint">без проекта</span>',
+    x.timeless ? '<span class="tag">∞ бессрочно</span>' : '',
     g ? `<span class="tag ellipsis" style="max-width:160px">${esc(g.title)}</span>` : '',
     x.estimateMin ? `<span>${esc(fmtMinutes(x.estimateMin))}</span>` : '',
     x.recurring ? `<span title="Повторяется">↻ ${x.recurring === 'daily' ? 'ежедневно' : 'еженедельно'}</span>` : '',
@@ -156,7 +157,8 @@ function taskRow(x, goalById, { overdue = false, inbox = false } = {}) {
   ].filter(Boolean).join('');
   let action = '';
   if (overdue) action = `<button class="btn sm secondary" data-action="move-today" data-id="${esc(x.id)}">→ сегодня</button>`;
-  else if (inbox) action = `<button class="btn sm secondary" data-action="schedule" data-id="${esc(x.id)}">→ ${esc(fmtDate(day))}</button>`;
+  else if (inbox) action = `<span class="row" style="gap:4px"><button class="btn sm secondary" data-action="schedule" data-id="${esc(x.id)}">→ ${esc(fmtDate(day))}</button><button class="btn sm ghost" data-action="timeless" data-id="${esc(x.id)}" data-tip="Сделать бессрочной">∞</button></span>`;
+  else if (timeless) action = `<button class="btn sm secondary" data-action="schedule" data-id="${esc(x.id)}">→ ${esc(fmtDate(day))}</button>`;
   return `<div class="list-item">
     ${checkBtn(!!x.done, `data-action="toggle" data-id="${esc(x.id)}" aria-label="Выполнено"`)}
     <div class="main">
@@ -187,7 +189,8 @@ function renderTasks(tasks, goalById, t) {
   const dayTasks = sortBy(open.filter(x => x.date === day), x => x.priority || 2);
   const overdueAll = sortBy(open.filter(x => x.date && x.date < t), x => x.date);
   const overdue = day === t ? overdueAll : [];
-  const inbox = sortBy(open.filter(x => !x.date), x => x.priority || 2);
+  const inbox = sortBy(open.filter(x => !x.date && !x.timeless), x => x.priority || 2);
+  const timeless = sortBy(open.filter(x => !x.date && x.timeless), x => x.priority || 2);
   const done = tasks.filter(x => x.done && String(x.doneAt || '').slice(0, 10) === day);
   const total = dayTasks.length + done.length;
   const planMin = sum([...dayTasks, ...overdue], x => x.estimateMin);
@@ -244,6 +247,10 @@ function renderTasks(tasks, goalById, t) {
               ${inbox.length ? `<div class="list">${inbox.map(x => row(x, { inbox: true })).join('')}</div>` : emptyState('Инбокс пуст', '📭')}
             </div>
           </details>
+        </div>
+        <div class="card" data-block="timeless" data-block-title="Бессрочные">
+          <div class="section-title"><h2>Бессрочные</h2><span class="tiny muted">${timeless.length} · без дедлайна</span></div>
+          ${timeless.length ? `<div class="list">${timeless.map(x => row(x, { timeless: true })).join('')}</div>` : emptyState('Задачи без срока: то, что хочется сделать, но не к дате. Отметьте «бессрочно» в задаче или допишите слово «бессрочно» при быстром добавлении', '♾️')}
         </div>
         <div class="card">
           <div class="section-title"><h2>Сделано</h2><span class="tiny muted">${done.length}</span></div>
@@ -358,7 +365,8 @@ export async function render(root, ctx) {
       case 'toggle': toggleTask(id); break;
       case 'edit': { const x = db.get('tasks', id); if (x) openTaskModal(x); break; }
       case 'move-today': db.update('tasks', id, { date: today() }); break;
-      case 'schedule': db.update('tasks', id, { date: day }); break;
+      case 'schedule': db.update('tasks', id, { date: day, timeless: false }); break;
+      case 'timeless': db.update('tasks', id, { date: null, timeless: true }); break;
       case 'move-all': {
         const list = db.where('tasks', x => !x.done && x.date && x.date < today());
         for (const x of list) db.update('tasks', x.id, { date: today() });

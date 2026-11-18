@@ -49,7 +49,8 @@ export function buildContext(pageId) {
   const open = tasks.filter(x => !x.done);
   const todayT = open.filter(x => x.date === t);
   const overdue = open.filter(x => x.date && x.date < t);
-  const inbox = open.filter(x => !x.date);
+  const inbox = open.filter(x => !x.date && !x.timeless);
+  const timeless = open.filter(x => !x.date && x.timeless);
   const doneToday = tasks.filter(x => x.done && String(x.doneAt || '').slice(0, 10) === t);
   const projName = (id) => id ? (db.get('projects', id)?.name || '') : '';
   const tline = (x) => `- [id ${x.id}] ${cut(x.title, 90)}${x.priority === 1 ? ' (важно)' : ''}${x.date ? ` · ${x.date}` : ''}${x.projectId ? ` · проект: ${cut(projName(x.projectId), 40)}` : ''}`;
@@ -57,6 +58,7 @@ export function buildContext(pageId) {
   if (todayT.length) L.push('Сегодня:\n' + todayT.slice(0, 15).map(tline).join('\n'));
   if (overdue.length) L.push('Просрочено:\n' + overdue.slice(0, 10).map(tline).join('\n'));
   if (inbox.length) L.push('Инбокс:\n' + inbox.slice(0, 10).map(tline).join('\n'));
+  if (timeless.length) L.push('Бессрочные (без дедлайна):\n' + timeless.slice(0, 10).map(tline).join('\n'));
 
   // Цели
   const goals = db.all('goals').filter(g => g.status === 'active');
@@ -156,8 +158,8 @@ export function buildContext(pageId) {
 
 // ---------- действия, доступные модели ----------
 const TOOLS = [
-  { name: 'add_task', description: 'Добавить задачу в список дел пользователя. Если дата не указана — задача попадёт в инбокс без даты. Можно привязать к проекту по id из контекста.',
-    input_schema: { type: 'object', properties: { title: { type: 'string' }, date: { type: 'string', description: 'YYYY-MM-DD или пусто' }, priority: { type: 'integer', description: '1 важная, 2 обычная, 3 низкая' }, projectId: { type: 'string' } }, required: ['title'] } },
+  { name: 'add_task', description: 'Добавить задачу в список дел пользователя. Если дата не указана — задача попадёт в инбокс без даты. timeless=true — бессрочная задача без дедлайна (отдельный список). Можно привязать к проекту по id из контекста.',
+    input_schema: { type: 'object', properties: { title: { type: 'string' }, date: { type: 'string', description: 'YYYY-MM-DD или пусто' }, priority: { type: 'integer', description: '1 важная, 2 обычная, 3 низкая' }, projectId: { type: 'string' }, timeless: { type: 'boolean' } }, required: ['title'] } },
   { name: 'complete_task', description: 'Отметить задачу выполненной по её id из контекста.',
     input_schema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] } },
   { name: 'log_habit', description: 'Отметить привычку выполненной сегодня по id привычки из контекста.',
@@ -184,8 +186,8 @@ function runTool(name, input) {
   const t = today();
   switch (name) {
     case 'add_task': {
-      const rec = db.add('tasks', { title: String(input.title || '').trim(), date: input.date || null, priority: [1, 2, 3].includes(Number(input.priority)) ? Number(input.priority) : 2, goalId: null, projectId: input.projectId && db.get('projects', input.projectId) ? input.projectId : null, streamId: null, estimateMin: null, notes: '', recurring: null, done: false, doneAt: null });
-      return `Задача добавлена: «${rec.title}»${rec.date ? ` на ${rec.date}` : ' (в инбокс)'}.`;
+      const rec = db.add('tasks', { title: String(input.title || '').trim(), date: input.timeless ? null : (input.date || null), timeless: !!input.timeless, priority: [1, 2, 3].includes(Number(input.priority)) ? Number(input.priority) : 2, goalId: null, projectId: input.projectId && db.get('projects', input.projectId) ? input.projectId : null, streamId: null, estimateMin: null, notes: '', recurring: null, done: false, doneAt: null });
+      return `Задача добавлена: «${rec.title}»${rec.date ? ` на ${rec.date}` : rec.timeless ? ' (бессрочная)' : ' (в инбокс)'}.`;
     }
     case 'complete_task': {
       const x = db.get('tasks', input.id); if (!x) return 'Ошибка: задача с таким id не найдена.';

@@ -20,12 +20,13 @@ const dayWord = (n) => plural(n, 'день', 'дня', 'дней');
 
 // Разбор быстрого ввода: «! купить билеты завтра» → важная задача на завтра
 function parseQuick(raw, d) {
-  let title = raw.trim(); let priority = 2; let date = d;
+  let title = raw.trim(); let priority = 2; let date = d; let timeless = false;
   if (title.startsWith('!')) { priority = 1; title = title.slice(1).trim(); }
   if (/\s+завтра$/i.test(title)) { date = addDays(d, 1); title = title.replace(/\s+завтра$/i, ''); }
   else if (/\s+послезавтра$/i.test(title)) { date = addDays(d, 2); title = title.replace(/\s+послезавтра$/i, ''); }
   else if (/\s+инбокс$/i.test(title)) { date = null; title = title.replace(/\s+инбокс$/i, ''); }
-  return { title, priority, date };
+  else if (/\s+бессрочно$/i.test(title)) { date = null; timeless = true; title = title.replace(/\s+бессрочно$/i, ''); }
+  return { title, priority, date, timeless };
 }
 
 export async function render(root, { navigate }) {
@@ -147,7 +148,7 @@ export async function render(root, { navigate }) {
           ${overdue.length ? `<div class="tiny bad" style="margin-top:8px">${icon('clock')} Просрочено задач: ${overdue.length} · <button class="link" data-go="goals">разобрать</button></div>` : ''}
         </div>` },
     { id: 'quick', title: 'Быстрое добавление', col: 1, html: `<form class="card row quick-add" id="quickTask" style="gap:8px">
-          <input class="input grow" name="title" placeholder="Добавить задачу…  «!» в начале — важная, «завтра» в конце — на завтра" autocomplete="off">
+          <input class="input grow" name="title" placeholder="Добавить задачу…  «!» — важная, «завтра» — на завтра, «бессрочно» — без срока" autocomplete="off">
           <button class="icon-btn primary" type="submit" aria-label="Добавить">${icon('plus')}</button>
         </form>` },
     { id: 'habits', title: 'Привычки', col: 1, html: `<div class="card">
@@ -305,10 +306,10 @@ export async function render(root, { navigate }) {
   });
   view.querySelector('#quickTask')?.addEventListener('submit', (e) => {
     e.preventDefault();
-    const { title: tt, priority, date } = parseQuick(e.target.title.value, d);
+    const { title: tt, priority, date, timeless } = parseQuick(e.target.title.value, d);
     if (!tt) return;
-    db.add('tasks', { title: tt, date, priority, done: false, doneAt: null, goalId: null, projectId: null, streamId: null, notes: '', estimateMin: null, recurring: null });
-    toast(date === d ? 'Задача на сегодня добавлена' : date ? `Задача на ${fmtDate(date)}` : 'Задача в инбоксе');
+    db.add('tasks', { title: tt, date, priority, timeless, done: false, doneAt: null, goalId: null, projectId: null, streamId: null, notes: '', estimateMin: null, recurring: null });
+    toast(date === d ? 'Задача на сегодня добавлена' : date ? `Задача на ${fmtDate(date)}` : timeless ? 'Бессрочная задача добавлена' : 'Задача в инбоксе');
   });
   on(view, 'click', '[data-add-task]', () => { const i = view.querySelector('#quickTask input'); if (i) i.focus(); else navigate('goals'); });
   const rf = view.querySelector('#reflectForm');
