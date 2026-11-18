@@ -3,6 +3,7 @@
 // старые книги и заметки переносятся сюда один раз (см. migrate()).
 import { db } from '../db.js';
 import { esc, icon, modal, field, formRow, toast, on, today, fmtDate, emptyState, sortBy, plural } from '../ui.js';
+import { renderIdeas, bindIdeas } from './ideas.js';
 
 export const title = 'Заметки';
 
@@ -22,6 +23,7 @@ const KIND_OPTIONS = Object.entries(KINDS);
 const PREVIEW = 260;
 
 // ---------- Локальное состояние ----------
+let tab = 'notes';          // notes | ideas
 let typeFilter = 'all';     // all | book | article | ...
 let tagFilter = null;       // имя тега
 let query = '';
@@ -143,8 +145,9 @@ function noteCard(n, { showSource = true } = {}) {
 }
 
 // ---------- Страница ----------
-export async function render(root) {
+export async function render(root, { params = {} } = {}) {
   migrate();
+  if (params.tab === 'ideas') tab = 'ideas';
   const notes = db.all('notes');
   const month = today().slice(0, 7);
   const counts = {}; for (const n of notes) counts[typeOf(n)] = (counts[typeOf(n)] || 0) + 1;
@@ -179,11 +182,22 @@ export async function render(root) {
     bodyHtml = `<div class="grid-auto ngrid">${list.map(n => noteCard(n)).join('')}</div>`;
   }
 
+  const head = `<div class="page-head">
+      <div><div class="eyebrow">Развитие</div><h1>${tab === 'ideas' ? 'Идеи' : 'Заметки'}</h1></div>
+      <div class="actions">
+        <div class="seg"><button type="button" class="${tab === 'notes' ? 'active' : ''}" data-tab="notes">Заметки</button><button type="button" class="${tab === 'ideas' ? 'active' : ''}" data-tab="ideas">Идеи</button></div>
+        ${tab === 'ideas' ? `<button class="btn" data-action="i-new">${icon('plus')} Идея</button>` : `<button class="btn" data-action="new">${icon('plus')} Заметка</button>`}
+      </div>
+    </div>`;
+  if (tab === 'ideas') {
+    root.innerHTML = `<div>${head}${renderIdeas()}</div>`;
+    const v = root.firstElementChild;
+    on(v, 'click', '[data-tab]', (e, b) => { tab = b.dataset.tab; render(root, {}); });
+    bindIdeas(v, () => render(root, {}));
+    return;
+  }
   root.innerHTML = `<div>
-    <div class="page-head">
-      <div><div class="eyebrow">Развитие</div><h1>Заметки</h1></div>
-      <div class="actions"><button class="btn" data-action="new">${icon('plus')} Заметка</button></div>
-    </div>
+    ${head}
     <div class="grid-3" style="margin-bottom:14px">
       <div class="stat"><span class="label">${icon('pen')} Заметок</span><span class="value">${notes.length}</span><span class="sub">${notes.filter(n => noteDate(n).startsWith(month)).length} в этом месяце</span></div>
       <div class="stat"><span class="label">${icon('library')} Источников</span><span class="value">${sources.size}</span><span class="sub">${counts.book ? `книг: ${counts.book}` : ''}${counts.article ? ` · статей: ${counts.article}` : ''}${counts.podcast ? ` · подкастов: ${counts.podcast}` : ''}</span></div>
@@ -216,6 +230,7 @@ export async function render(root) {
   </div>`;
   const page = root.firstElementChild;
 
+  on(page, 'click', '[data-tab]', (e, b) => { tab = b.dataset.tab; render(root, {}); });
   on(page, 'click', '[data-action="new"]', (e, b) => openNoteModal(null, b.dataset.source != null ? { sourceTitle: b.dataset.source, sourceType: b.dataset.type || 'book', sourceAuthor: b.dataset.author || '' } : {}));
   on(page, 'click', '[data-action="edit"]', (e, b) => { const n = db.get('notes', b.dataset.id); if (n) openNoteModal(n); });
   on(page, 'click', '[data-action="toggle"]', (e, b) => { expanded.has(b.dataset.id) ? expanded.delete(b.dataset.id) : expanded.add(b.dataset.id); render(root); });

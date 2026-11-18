@@ -99,6 +99,8 @@ export function buildContext(pageId) {
       return `- [id ${p.id}] ${cut(p.name, 40)}${p.role ? ` · ${cut(p.role, 40)}` : ''} (${p.type})${last ? ` · последний контакт ${last}` : ' · контактов не было'}${mine.length ? ` · я обещала: ${mine.map(c => `${cut(c.title, 50)}${c.due ? ` до ${c.due}` : ''}`).join('; ')}` : ''}${theirs.length ? ` · мне обещали: ${theirs.map(c => `${cut(c.title, 50)}${c.due ? ` до ${c.due}` : ''}`).join('; ')}` : ''}${p.notes ? ` · как работать: ${cut(p.notes, 120)}` : ''}`;
     }).join('\n'));
   }
+  const ideas = db.all('ideas').filter(i => i.status !== 'done' && i.status !== 'dropped');
+  if (ideas.length) L.push(`\n## Идеи (копилка)\n` + ideas.slice(0, 10).map(i => `- [id ${i.id}] ${cut(i.title, 70)} · ${i.status} · эффект ${i.impact || 2}/3, усилия ${i.effort || 2}/3`).join('\n'));
   const kbSections = db.all('kbSections');
   if (kbSections.length) L.push(`\n## База знаний\n` + kbSections.map(sec => `- ${sec.icon || ''} ${cut(sec.name, 40)}: ${db.where('kbPages', pg => pg.sectionId === sec.id).slice(0, 8).map(pg => cut(pg.title, 40)).join(', ') || 'пусто'}`).join('\n'));
 
@@ -172,6 +174,8 @@ const TOOLS = [
     input_schema: { type: 'object', properties: { personId: { type: 'string' }, direction: { type: 'string', enum: ['mine', 'theirs'] }, title: { type: 'string' }, due: { type: 'string', description: 'YYYY-MM-DD или пусто' } }, required: ['personId', 'direction', 'title'] } },
   { name: 'log_contact', description: 'Записать контакт с человеком (встреча, созвон, переписка): о чём говорили и следующий шаг. Обновляет дату последнего контакта.',
     input_schema: { type: 'object', properties: { personId: { type: 'string' }, text: { type: 'string' }, next: { type: 'string' }, kind: { type: 'string', enum: ['meeting', 'call', 'chat', 'other'] } }, required: ['personId', 'text'] } },
+  { name: 'add_idea', description: 'Записать идею в копилку идей (раздел Заметки → Идеи).',
+    input_schema: { type: 'object', properties: { title: { type: 'string' }, body: { type: 'string' }, impact: { type: 'integer', description: '1-3' }, effort: { type: 'integer', description: '1-3' } }, required: ['title'] } },
   { name: 'write_journal', description: 'Записать или дополнить дневник за сегодня. Передавайте только те поля, которые пользователь попросил записать.',
     input_schema: { type: 'object', properties: { highlight: { type: 'string' }, wentWell: { type: 'string' }, improve: { type: 'string' }, gratitude: { type: 'string' }, lessons: { type: 'string' }, mood: { type: 'integer', description: '1-5' } } } },
 ];
@@ -221,6 +225,10 @@ function runTool(name, input) {
       db.add('contacts', { personId: p.id, date: t, kind: input.kind || 'other', text: String(input.text || '').trim(), next: input.next || '' });
       return `Контакт с ${p.name} записан.`;
     }
+    case 'add_idea': {
+      const rec = db.add('ideas', { title: String(input.title || '').trim(), body: input.body || '', status: 'new', impact: [1, 2, 3].includes(Number(input.impact)) ? Number(input.impact) : 2, effort: [1, 2, 3].includes(Number(input.effort)) ? Number(input.effort) : 2, tags: [], pinned: false });
+      return `Идея записана: «${rec.title}».`;
+    }
     case 'write_journal': {
       const fields = ['highlight', 'wentWell', 'improve', 'gratitude', 'lessons'];
       const patch = {}; for (const f of fields) if (input[f]) patch[f] = String(input[f]);
@@ -244,7 +252,7 @@ function systemPrompt(pageId) {
 
 Для раздела Shadow: помогай готовиться к разговорам с CEO, опираясь на записанные рекомендации и наблюдения; формулируй, как лучше подать вопрос или результат именно этому человеку.
 
-Действия: у тебя есть инструменты для записи в приложение (добавить задачу, отметить выполненной, отметить привычку, записать в Shadow, в журнал проекта, в дневник, создать цель, записать обязательство или контакт с человеком). Используй их, когда пользователь прямо просит что-то записать, добавить или отметить. После действия коротко подтверди, что сделано. Не создавай записи без явной просьбы.
+Действия: у тебя есть инструменты для записи в приложение (добавить задачу, отметить выполненной, отметить привычку, записать в Shadow, в журнал проекта, в дневник, создать цель, записать обязательство или контакт с человеком, записать идею). Используй их, когда пользователь прямо просит что-то записать, добавить или отметить. После действия коротко подтверди, что сделано. Не создавай записи без явной просьбы.
 
 Открыт раздел: ${pageId}.`;
 }

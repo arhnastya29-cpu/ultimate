@@ -43,6 +43,7 @@ export async function render(root, { params, navigate, page }) {
 | `contacts` | журнал контактов: `personId, date, kind: 'meeting'\|'call'\|'chat'\|'other', text, next` — дата последнего контакта считается отсюда |
 | `kbSections` | разделы базы знаний пользователя: `name, icon (emoji), description, order` |
 | `kbPages` | страницы базы знаний: `sectionId, title, body (простая разметка: #, -, **, \`, [[Название]]), tags: string[], pinned` |
+| `ideas` | копилка идей (вкладка в «Заметках»): `title, body, status: 'new'\|'maybe'\|'inwork'\|'done'\|'dropped', impact 1-3, effort 1-3, tags: string[], pinned, projectId?` |
 | `tasks` | `title, date (date|null = без даты/инбокс), priority: 1 (высокий)\|2\|3, goalId?, projectId?, streamId?, focusDate? (дата, когда задача в «фокусе дня» на главной, до 3 штук), done bool, doneAt?, notes, estimateMin?, recurring?: 'daily'\|'weekly'\|null` |
 | `checkins` | `date (уникальна), mood 1-5, energy 1-5, stress 1-5, symptoms: string[], weight?, notes` |
 | `labTests` | `date, name, value (number), unit, refLow?, refHigh?, notes` |

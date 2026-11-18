@@ -511,6 +511,11 @@ svg[aria-hidden="true"] { width: 1em; height: 1em; vertical-align: -0.15em; flex
 [data-customize].active { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
 @media (max-width: 860px) { .edit-bar { top: calc(6px + env(safe-area-inset-top, 0px)); } .blk-tools { top: -10px; } }
 
+/* ---------- Идеи ---------- */
+.idea-dots { display: inline-flex; gap: 2px; vertical-align: middle; margin-left: 2px; }
+.idea-dots i { width: 7px; height: 7px; border-radius: 50%; background: var(--surface-3); display: inline-block; }
+.idea-dots.good i.on { background: var(--good); } .idea-dots.warn i.on { background: var(--warn); }
+
 /* ---------- Toasts ---------- */
 #toasts { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 8px; z-index: 200; pointer-events: none; }
 .toast { background: var(--fg); color: var(--bg); padding: 10px 16px; border-radius: 999px; font-size: 13px; font-weight: 600; box-shadow: 0 16px 40px -10px rgba(0,0,0,0.4); animation: toast-in .4s var(--spring); display: flex; align-items: center; gap: 8px; }

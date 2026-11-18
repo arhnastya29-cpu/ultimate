@@ -20,7 +20,7 @@ export const COLLECTIONS = [
   'goals', 'tasks', 'projects', 'streams', 'visionItems',
   'shadowTasks', 'shadowNotes',
   'people', 'commitments', 'contacts',
-  'kbSections', 'kbPages',
+  'kbSections', 'kbPages', 'ideas',
   'checkins', 'labTests', 'healthTodos', 'medications', 'medLogs',
   'workouts', 'workoutTemplates',
   'foods', 'meals', 'dayLogs',
