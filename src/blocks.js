@@ -32,10 +32,13 @@ export function resolveBlocks(pageId, blocks) {
   return ordered.map(b => ({ ...b, col: l.col[b.id] || b.col || 1, visible: !hiddenSet.has(b.id) }));
 }
 
+const registry = new Map();   // pageId -> [{id,title}]
+
 export function composeBlocks(pageId, blocks) {
+  registry.set(pageId, blocks.map(b => ({ id: b.id, title: b.title })));
   const list = resolveBlocks(pageId, blocks).filter(b => b.visible && b.html);
-  const col = (n) => list.filter(b => b.col === n).map(b => `<section class="block" data-block="${esc(b.id)}">${b.html}</section>`).join('');
-  const single = list.map(b => `<section class="block" data-block="${esc(b.id)}">${b.html}</section>`).join('');
+  const col = (n) => list.filter(b => b.col === n).map(b => `<section class="block" data-block="${esc(b.id)}" data-block-id="${esc(b.id)}" data-block-title="${esc(b.title)}">${b.html}</section>`).join('');
+  const single = list.map(b => `<section class="block" data-block="${esc(b.id)}" data-block-id="${esc(b.id)}" data-block-title="${esc(b.title)}">${b.html}</section>`).join('');
   if (!list.length) return `<div class="card"><div class="empty">Все блоки скрыты. Нажмите «Настроить страницу», чтобы вернуть нужные.</div></div>`;
   // Десктоп: две колонки по выбранной колонке; телефон: общий порядок одной лентой.
   // Рендерим только один вариант, чтобы id и обработчики не дублировались; при смене ширины
@@ -46,13 +49,13 @@ export function composeBlocks(pageId, blocks) {
 }
 
 export function customizeButton(pageId) {
-  return `<button type="button" class="icon-btn sm" data-customize="${esc(pageId)}" aria-label="Настроить страницу" data-tip="Настроить страницу: порядок и видимость блоков">${icon('settings')}</button>`;
+  return `<button type="button" class="icon-btn sm" data-customize="${esc(pageId)}" aria-label="Настроить страницу" data-tip="Настроить экран: перетаскивать, скрывать и добавлять блоки">${icon('settings')}</button>`;
 }
 
 export function bindCustomize(root, pageId, blocks) {
   root.addEventListener('click', (e) => {
     const b = e.target.closest('[data-customize]');
-    if (b && b.dataset.customize === pageId) openCustomize(pageId, blocks);
+    if (b && b.dataset.customize === pageId) toggleEditMode(pageId);
   });
 }
 
@@ -229,4 +232,143 @@ export function openAutoCustomize(pageId) {
   });
   m.el.querySelector('[data-layout-reset]').addEventListener('click', () => { const all = { ...(db.settings().layouts || {}) }; delete all[pageId]; db.setSettings({ layouts: all }); setTimeout(draw, 80); toast('Страница сброшена к исходному виду'); });
   draw();
+}
+
+
+// =====================================================================================
+// Режим редактирования экрана «как на айфоне»: блоки получают ручку для перетаскивания
+// и крестик, внизу галерея скрытых виджетов. Работает и для composeBlocks, и для автоблоков.
+// =====================================================================================
+let editingPage = null;
+
+export function isEditing(pageId) { return editingPage === pageId; }
+export function toggleEditMode(pageId) { if (editingPage === pageId) exitEditMode(); else enterEditMode(pageId); }
+export function exitEditMode() {
+  editingPage = null;
+  const root = document.getElementById('page'); if (!root) return;
+  root.classList.remove('page-editing');
+  root.querySelectorAll('.blk-tools, .edit-bar').forEach(e => e.remove());
+  root.querySelectorAll('[data-block-id]').forEach(el => { el.classList.remove('blk-edit'); });
+  const btn = root.querySelector('[data-customize]'); if (btn) btn.classList.remove('active');
+}
+export function enterEditMode(pageId) { editingPage = pageId; decorateEditMode(pageId); }
+
+function pageBlocksFor(pageId, root) {
+  // все известные блоки страницы (включая скрытые) с заголовками
+  if (registry.has(pageId)) return registry.get(pageId);
+  return findBlocks(root).map(b => ({ id: b.id, title: b.title }));
+}
+
+function columnsOf(root) {
+  const cols = root.querySelector('.blocks-cols');
+  if (cols) return [...cols.querySelectorAll(':scope > .stack')];
+  const grid = [...root.querySelectorAll('.grid-2')].find(g => g.querySelectorAll(':scope > .stack').length >= 2);
+  return grid ? [...grid.querySelectorAll(':scope > .stack')] : [];
+}
+
+function saveFromDom(pageId, root) {
+  const l = layoutOf(pageId);
+  const els = [...root.querySelectorAll('[data-block-id]')];
+  const stacks = columnsOf(root);
+  const order = els.map(e => e.dataset.blockId);
+  const col = { ...l.col };
+  for (const e of els) { const i = stacks.indexOf(e.parentElement); if (i >= 0) col[e.dataset.blockId] = i + 1; }
+  // порядок: скрытые (не в DOM на composeBlocks-страницах) остаются в конце
+  const known = pageBlocksFor(pageId, root).map(b => b.id);
+  for (const id of known) if (!order.includes(id)) order.push(id);
+  saveLayout(pageId, { order, col, hidden: l.hidden || [] });
+}
+
+function decorateEditMode(pageId) {
+  const root = document.getElementById('page'); if (!root) return;
+  if (root.querySelector('.page-editing-marker')) return;
+  root.classList.add('page-editing');
+  const btn = root.querySelector('[data-customize]'); if (btn) btn.classList.add('active');
+  const els = [...root.querySelectorAll('[data-block-id]')].filter(e => e.style.display !== 'none');
+  for (const el of els) {
+    if (el.querySelector(':scope > .blk-tools')) continue;
+    el.classList.add('blk-edit');
+    const title = el.dataset.blockTitle || blockTitle(el);
+    el.insertAdjacentHTML('afterbegin', `<div class="blk-tools"><span class="blk-handle" title="Перетащить">${icon('menu')}</span><span class="blk-name">${esc(title)}</span><button type="button" class="blk-hide" data-blk-hide="${esc(el.dataset.blockId)}" aria-label="Скрыть блок">${icon('x')}</button></div>`);
+  }
+  // панель режима
+  const l = layoutOf(pageId);
+  const hiddenIds = new Set(l.hidden || []);
+  const all = pageBlocksFor(pageId, root);
+  const hiddenBlocks = all.filter(b => hiddenIds.has(b.id));
+  const host = root.querySelector('.page-head') || root.firstElementChild;
+  host.insertAdjacentHTML('afterend', `<div class="edit-bar page-editing-marker">
+    <div class="row between wrap" style="gap:8px">
+      <div class="small"><b>Режим редактирования.</b> Тяните блок за ручку, крестик скрывает. ${columnsOf(root).length ? 'Можно переносить между колонками.' : ''}</div>
+      <div class="row" style="gap:6px"><button type="button" class="link" data-edit-reset>Сбросить</button><button type="button" class="btn sm" data-edit-done>${icon('check')} Готово</button></div>
+    </div>
+    ${hiddenBlocks.length ? `<div class="row wrap" style="gap:6px;margin-top:8px"><span class="tiny muted">Добавить виджет:</span>${hiddenBlocks.map(b => `<button type="button" class="chip" data-blk-show="${esc(b.id)}">+ ${esc(b.title)}</button>`).join('')}</div>` : '<div class="tiny faint" style="margin-top:6px">Все виджеты на экране</div>'}
+  </div>`);
+}
+
+// клики: скрыть / показать / готово / сброс
+document.addEventListener('click', (e) => {
+  if (!editingPage) return;
+  const hide = e.target.closest('[data-blk-hide]'); const show = e.target.closest('[data-blk-show]');
+  if (hide) { const l = layoutOf(editingPage); l.hidden = [...new Set([...(l.hidden || []), hide.dataset.blkHide])]; saveLayout(editingPage, l); return; }
+  if (show) { const l = layoutOf(editingPage); l.hidden = (l.hidden || []).filter(id => id !== show.dataset.blkShow); saveLayout(editingPage, l); return; }
+  if (e.target.closest('[data-edit-done]')) { exitEditMode(); return; }
+  if (e.target.closest('[data-edit-reset]')) { const all = { ...(db.settings().layouts || {}) }; delete all[editingPage]; db.setSettings({ layouts: all }); toast('Экран сброшен к исходному'); }
+});
+
+// перетаскивание указателем (мышь и палец)
+let drag = null;
+document.addEventListener('pointerdown', (e) => {
+  const h = e.target.closest('.blk-handle'); if (!h || !editingPage) return;
+  const el = h.closest('[data-block-id]'); if (!el) return;
+  e.preventDefault();
+  const r = el.getBoundingClientRect();
+  const ghost = el.cloneNode(true); ghost.classList.add('blk-ghost'); ghost.style.width = r.width + 'px'; ghost.style.left = r.left + 'px'; ghost.style.top = r.top + 'px';
+  document.body.appendChild(ghost);
+  el.classList.add('blk-dragging');
+  drag = { el, ghost, dx: e.clientX - r.left, dy: e.clientY - r.top, moved: false };
+  h.setPointerCapture?.(e.pointerId);
+});
+document.addEventListener('pointermove', (e) => {
+  if (!drag) return;
+  drag.moved = true;
+  drag.ghost.style.left = (e.clientX - drag.dx) + 'px'; drag.ghost.style.top = (e.clientY - drag.dy) + 'px';
+  drag.ghost.style.display = 'none';
+  const under = document.elementFromPoint(e.clientX, e.clientY);
+  drag.ghost.style.display = '';
+  if (!under) return;
+  const target = under.closest('[data-block-id]');
+  const root = document.getElementById('page');
+  if (target && target !== drag.el && root.contains(target)) {
+    // одноуровневые контейнеры: переносим только туда, где могут жить блоки
+    const tr = target.getBoundingClientRect();
+    const before = e.clientY < tr.top + tr.height / 2;
+    target.parentElement.insertBefore(drag.el, before ? target : target.nextSibling);
+  } else {
+    // над колонкой, но не над блоком: вставляем по вертикали между блоками колонки
+    const stack = under.closest('.stack');
+    if (stack && columnsOf(root).includes(stack)) {
+      const kids = [...stack.querySelectorAll(':scope > [data-block-id]')].filter(k => k !== drag.el);
+      const next = kids.find(k => { const kr = k.getBoundingClientRect(); return e.clientY < kr.top + kr.height / 2; });
+      if (next) { if (next !== drag.el.nextSibling || drag.el.parentElement !== stack) stack.insertBefore(drag.el, next); }
+      else if (stack.lastElementChild !== drag.el) stack.appendChild(drag.el);
+    }
+  }
+  // автопрокрутка у краёв
+  if (e.clientY < 70) window.scrollBy(0, -12); else if (e.clientY > window.innerHeight - 70) window.scrollBy(0, 12);
+});
+const endDrag = () => {
+  if (!drag) return;
+  drag.ghost.remove(); drag.el.classList.remove('blk-dragging');
+  const moved = drag.moved; drag = null;
+  if (moved && editingPage) saveFromDom(editingPage, document.getElementById('page'));
+};
+document.addEventListener('pointerup', endDrag);
+document.addEventListener('pointercancel', endDrag);
+
+// после перерисовки страницы режим редактирования восстанавливается
+export function afterPageRender(root, pageId) {
+  if (!root.querySelector('.blocks[data-page]')) applyLayout(root, pageId);
+  if (editingPage === pageId) decorateEditMode(pageId);
+  else if (editingPage && editingPage !== pageId) editingPage = null;
 }

@@ -3,7 +3,7 @@ import { esc, icon, toast, el } from './ui.js';
 import { afterRender, watchCelebrations, openCommandPalette } from './fx.js';
 import { initSync } from './sync.js';
 import { initAiPanel, setAiPage } from './ai-panel.js';
-import { applyLayout, openAutoCustomize } from './blocks.js';
+import { afterPageRender, toggleEditMode } from './blocks.js';
 
 // Реестр страниц. Каждая страница — модуль, экспортирующий { title, render(root) }.
 // render может вернуть функцию очистки. На любое изменение данных страница перерисовывается.
@@ -144,9 +144,9 @@ async function renderPage(force = false) {
   current = { id: page.id, cleanup };
   // Модульность: страницы без composeBlocks получают порядок/видимость блоков автоматически,
   // в том числе при внутренних перерисовках (страница сама заменяет root.innerHTML).
-  if (!pageRoot.querySelector('.blocks[data-page]')) {
-    applyLayout(pageRoot, page.id);
-    const obs = new MutationObserver(() => { if (!pageRoot.querySelector('.blocks[data-page]')) applyLayout(pageRoot, page.id); });
+  afterPageRender(pageRoot, page.id);
+  {
+    const obs = new MutationObserver(() => afterPageRender(pageRoot, page.id));
     obs.observe(pageRoot, { childList: true });
     const prevCleanup = cleanup;
     cleanup = () => { obs.disconnect(); if (typeof prevCleanup === 'function') prevCleanup(); };
@@ -158,7 +158,7 @@ async function renderPage(force = false) {
 }
 document.addEventListener('click', (e) => {
   const b = e.target.closest('[data-customize]');
-  if (b && !b.closest('.blocks[data-page]') && !document.querySelector('#page .blocks[data-page]')) openAutoCustomize(b.dataset.customize);
+  if (b && !document.querySelector('#page .blocks[data-page]')) toggleEditMode(b.dataset.customize);
 });
 
 function applyTheme() {

@@ -7,6 +7,7 @@ import { esc, icon, today, addDays, fmtDate, fmtDateLong, fmtMinutes, fmtNum, fm
 export const title = 'Сегодня';
 
 let showRest = false;   // раскрыт ли список остальных задач дня
+let habitsEdit = false; // режим правки привычек на главной (крестики на чипах)
 
 function greeting() {
   const h = new Date().getHours();
@@ -150,8 +151,9 @@ export async function render(root, { navigate }) {
           <button class="icon-btn primary" type="submit" aria-label="Добавить">${icon('plus')}</button>
         </form>` },
     { id: 'habits', title: 'Привычки', col: 1, html: `<div class="card">
-          <div class="section-title"><h2>${icon('repeat')} Привычки</h2><span class="tiny muted">${habits.length ? `${habitsDoneN}/${habits.length}` : ''} <button class="link" data-go="habits">все</button></span></div>
-          ${habits.length ? `<div class="habit-row">${habits.map(h => `<button type="button" class="habit-chip ${habitDone(h) ? 'done' : ''}" data-habit="${esc(h.id)}"><span class="hc-icon">${esc(h.icon || '✓')}</span><span class="hc-name">${esc(h.name)}</span>${(h.target || 1) > 1 ? `<span class="hc-cnt">${habitCount(h)}/${h.target}</span>` : ''}</button>`).join('')}</div>` : '<div class="empty tiny">Нет привычек на сегодня</div>'}
+          <div class="section-title"><h2>${icon('repeat')} Привычки</h2><span class="row tiny muted" style="gap:8px">${habits.length ? `${habitsDoneN}/${habits.length}` : ''}<button class="link" data-habit-add>+ привычка</button><button class="link" data-habit-edit>${habitsEdit ? 'готово' : 'изменить'}</button></span></div>
+          ${habits.length ? `<div class="habit-row ${habitsEdit ? 'editing' : ''}">${habits.map(h => `<button type="button" class="habit-chip ${habitDone(h) ? 'done' : ''}" data-habit="${esc(h.id)}"><span class="hc-icon">${esc(h.icon || '✓')}</span><span class="hc-name">${esc(h.name)}</span>${(h.target || 1) > 1 ? `<span class="hc-cnt">${habitCount(h)}/${h.target}</span>` : ''}${habitsEdit ? `<span class="hc-x" data-habit-remove="${esc(h.id)}" title="Убрать (в архив)">${icon('x')}</span>` : ''}</button>`).join('')}</div>` : '<div class="empty tiny">Нет привычек на сегодня. Нажмите «+ привычка»</div>'}
+          ${habitsEdit ? '<div class="tiny faint" style="margin-top:8px">Тап по привычке открывает её настройки, крестик убирает в архив. Порядок и дни — на странице «Привычки».</div>' : ''}
         </div>` },
     { id: 'checkin', title: 'Чек-ин: сон, энергия, настроение', col: 1, html: `<div class="card qc">
           <div class="section-title"><h2>${icon('heart')} Как вы сегодня</h2><span class="tiny muted">${sleep && checkin?.mood && checkin?.energy ? 'записано ✓' : 'одно касание'}</span></div>
@@ -274,8 +276,13 @@ export async function render(root, { navigate }) {
   });
   on(view, 'click', '[data-unfocus]', (e, t) => db.update('tasks', t.dataset.unfocus, { focusDate: null }));
   on(view, 'click', '[data-toggle-rest]', () => { showRest = !showRest; render(root, { navigate }); });
-  on(view, 'click', '[data-habit]', (e, t) => {
+  on(view, 'click', '[data-habit-add]', async () => { const m = await import('./habits.js'); m.openHabitModal(null, db.all('habits').length); });
+  on(view, 'click', '[data-habit-edit]', () => { habitsEdit = !habitsEdit; render(root, { navigate }); });
+  on(view, 'click', '[data-habit-remove]', (e, t) => { e.stopPropagation(); const h = db.get('habits', t.dataset.habitRemove); if (h && confirm(`Убрать «${h.name}» в архив? История сохранится.`)) db.update('habits', h.id, { archived: true }); });
+  on(view, 'click', '[data-habit]', async (e, t) => {
+    if (e.target.closest('[data-habit-remove]')) return;
     const h = db.get('habits', t.dataset.habit); if (!h) return;
+    if (habitsEdit) { const m = await import('./habits.js'); m.openHabitModal(h); return; }
     const log = hlogs.find(l => l.habitId === h.id);
     const target = h.target || 1; const cur = log?.count || 0;
     const nextV = cur >= target ? 0 : target > 1 ? cur + 1 : target;

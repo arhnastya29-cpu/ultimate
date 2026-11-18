@@ -83,7 +83,7 @@ function bestStreak(h, counts, endIso) {
 }
 
 // ---------- Модалка ----------
-function openHabitModal(habit, nextOrder) {
+export function openHabitModal(habit, nextOrder) {
   const isNew = !habit;
   const x = habit || { name: '', icon: '✅', color: 'var(--c1)', days: [], target: 1, archived: false };
   const days = Array.isArray(x.days) ? x.days : [];
