@@ -2,6 +2,7 @@ import { db } from './db.js';
 import { esc, icon, toast, el } from './ui.js';
 import { afterRender, watchCelebrations, openCommandPalette } from './fx.js';
 import { initSync } from './sync.js';
+import { initAiPanel, setAiPage } from './ai-panel.js';
 
 // Реестр страниц. Каждая страница — модуль, экспортирующий { title, render(root) }.
 // render может вернуть функцию очистки. На любое изменение данных страница перерисовывается.
@@ -119,6 +120,7 @@ async function renderPage(force = false) {
     if (current?.cleanup) { try { current.cleanup(); } catch {} }
     renderSidebar(page.id);
     document.title = `${page.title} · ULTIMATE`;
+    setAiPage(page.id);
   }
   if (changed) currentMod = await page.mod();
   const scrollY = window.scrollY;
@@ -180,6 +182,7 @@ document.addEventListener('keydown', (e) => {
   await renderPage(true);
   watchCelebrations();
   initSync();
+  initAiPanel();
   // Напоминание о бэкапе раз в неделю.
   const last = localStorage.getItem('lifeos_lastExport');
   if (last && Date.now() - Number(last) > 7 * 86400000) toast('Прошла неделя с последнего бэкапа — экспортируйте данные в Настройках');

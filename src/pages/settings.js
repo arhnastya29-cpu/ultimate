@@ -2,6 +2,7 @@ import { db, DEFAULT_SETTINGS, COLLECTIONS } from '../db.js';
 import { esc, icon, field, formRow, formData, toast, on, fmtNum, modal, fmtDate } from '../ui.js';
 import { canInstall, promptInstall, isStandalone, onInstallChange } from '../pwa.js';
 import { status as syncStatus, onChange as onSyncChange, enable as syncEnable, disable as syncDisable, syncNow } from '../sync.js';
+import { aiConfig, setAiConfig, aiReady, testKey, MODELS } from '../ai.js';
 
 export const title = 'Настройки';
 
@@ -74,6 +75,23 @@ function openSyncModal() {
   });
 }
 
+function aiBlock() {
+  const c = aiConfig();
+  return `<p class="muted small" style="margin-bottom:12px">Помощник на Claude видит ваши данные и даёт советы по всем разделам, а также записывает задачи и заметки по вашей просьбе. Нужен ключ с <a class="link" href="https://platform.claude.com/settings/keys" target="_blank" rel="noopener">platform.claude.com</a>. Ключ хранится только на этом устройстве и в облако не уходит.</p>
+    <form class="form" id="aiform">
+      ${field({ name: 'apiKey', label: 'Ключ Claude', type: 'password', value: c.apiKey || '', placeholder: 'sk-ant-api03-…' })}
+      ${formRow(
+        field({ name: 'model', label: 'Модель', type: 'select', value: c.model || 'claude-opus-5-5', options: MODELS }),
+        field({ name: 'workspaceId', label: 'Workspace ID (если ключ без привязки)', value: c.workspaceId || '', placeholder: 'обычно пусто' }),
+      )}
+      <div class="row wrap" style="gap:8px">
+        <button class="btn" type="submit">${icon('check')} Сохранить</button>
+        <button class="btn secondary" type="button" data-ai-test ${aiReady() ? '' : 'disabled'}>${icon('zap')} Проверить ключ</button>
+        <span class="tiny muted" data-ai-status>${aiReady() ? 'ключ сохранён' : 'ключ не задан'}</span>
+      </div>
+    </form>`;
+}
+
 export async function render(root) {
   const s = db.settings();
   const counts = COLLECTIONS.map(c => db.all(c).length).reduce((a, b) => a + b, 0);
@@ -115,6 +133,10 @@ export async function render(root) {
           </div>
           <label class="row tiny muted" style="margin-top:10px;gap:6px"><input type="checkbox" id="mergeImport"> При импорте объединять с текущими данными, а не заменять</label>
         </div>
+        <div class="card" id="aiCard">
+          <h3>Помощник (Claude)</h3>
+          ${aiBlock()}
+        </div>
         <div class="card" id="syncCard">
           <h3>Синхронизация между устройствами</h3>
           ${syncBlock()}
@@ -145,6 +167,21 @@ export async function render(root) {
     for (const k of Object.keys(d)) if (d[k] == null && typeof DEFAULT_SETTINGS[k] === 'number') d[k] = DEFAULT_SETTINGS[k];
     db.setSettings(d);
     toast('Настройки сохранены');
+  });
+
+  root.querySelector('#aiform').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const d = formData(e.target);
+    setAiConfig({ apiKey: String(d.apiKey || '').trim(), model: d.model || 'claude-opus-5-5', workspaceId: String(d.workspaceId || '').trim() });
+    root.querySelector('[data-ai-status]').textContent = aiReady() ? 'ключ сохранён' : 'ключ не задан';
+    root.querySelector('[data-ai-test]').disabled = !aiReady();
+    toast(aiReady() ? 'Помощник настроен' : 'Ключ очищен');
+  });
+  on(root, 'click', '[data-ai-test]', async (e, el) => {
+    el.disabled = true; const st = root.querySelector('[data-ai-status]'); st.textContent = 'проверяю…';
+    try { await testKey(); st.textContent = 'ключ работает ✓'; toast('Ключ работает'); }
+    catch (err) { st.textContent = 'ошибка: ' + (err.message || err); }
+    finally { el.disabled = false; }
   });
 
   on(root, 'click', '[data-sync-enable]', () => openSyncModal());

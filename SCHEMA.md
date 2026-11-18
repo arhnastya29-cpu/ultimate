@@ -67,3 +67,7 @@ export async function render(root, { params, navigate, page }) {
 ## Синхронизация (`src/sync.js`)
 
 Из пароля (PBKDF2) выводятся id «полки» и ключ AES-GCM; `db.snapshot()` сжимается, шифруется и хранится одной строкой в таблице `vaults` Supabase (`id, blob, version, updated_at`). Слияние по записям: побеждает большее `updatedAt`, удаления через `db.tombstones` (`{col: {id: isoDate}}`, пишутся в `db.remove`). Запись в облако защищена проверкой `version`. Настройки устройства — в `localStorage['ultimate_sync']` (id полки и ключ в JWK, пароль не хранится). Публичный ключ Supabase в коде не секретный.
+
+## Помощник (`src/ai.js`, `src/ai-panel.js`)
+
+Ключ Claude и модель — в `localStorage['ultimate_ai']` (не синхронизируются). `buildContext(pageId)` собирает текстовую выжимку всех разделов с id записей; `ask(text, {pageId, onText, onAction})` шлёт потоковый запрос в `api.anthropic.com/v1/messages` (`anthropic-version: 2026-10-21`, заголовок `anthropic-dangerous-direct-browser-access`), выполняет инструменты (`add_task`, `complete_task`, `log_habit`, `add_shadow_task`, `add_shadow_note`, `add_project_log`, `add_goal`, `write_journal`) и возвращает текст. История чата (текст) — `localStorage['ultimate_ai_chat']`. Панель: плавающая кнопка, ⌘J, быстрые вопросы по разделу (`quickPrompts`), голосовой ввод через SpeechRecognition.
