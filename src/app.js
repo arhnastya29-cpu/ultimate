@@ -153,6 +153,8 @@ function applyTheme() {
   if (tb) tb.innerHTML = icon(isDark() ? 'sun' : 'moon');
 }
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
+// Модульные страницы рендерят одну или две колонки в зависимости от ширины — при переходе через порог перерисовываем.
+window.matchMedia('(max-width: 860px)').addEventListener('change', () => renderPage(true));
 
 // Перерисовка при изменении данных, с дебаунсом (несколько мутаций подряд = один рендер).
 let rerenderTimer = null;

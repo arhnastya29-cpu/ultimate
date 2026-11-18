@@ -425,6 +425,45 @@ svg[aria-hidden="true"] { width: 1em; height: 1em; vertical-align: -0.15em; flex
 .nsource .section-title h2 { display: flex; align-items: center; gap: 8px; font-size: 16px; }
 @media (max-width: 860px) { .ntags { flex-wrap: nowrap; overflow-x: auto; } }
 
+/* ---------- Главная ---------- */
+.focus-card { border-color: var(--line-2); box-shadow: 0 0 0 1px var(--accent-soft), var(--shadow); }
+.focus-item { padding: 12px 6px; }
+.focus-item .title { font-size: 15.5px; font-weight: 600; }
+.focus-item .check { width: 26px; height: 26px; }
+.quick-add { padding: 10px 12px; }
+.quick-add .input { border: 0; background: transparent; padding: 8px 4px; }
+.habit-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.habit-chip { display: inline-flex; align-items: center; gap: 7px; padding: 8px 12px 8px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface-2); color: var(--fg-2); font-size: 13px; font-weight: 500; cursor: pointer; transition: all .2s var(--spring); }
+.habit-chip:hover { border-color: var(--line-2); color: var(--fg); transform: translateY(-1px); }
+.habit-chip.done { background: var(--good-soft); color: var(--good); border-color: transparent; }
+.habit-chip.done .hc-name { text-decoration: line-through; opacity: .8; }
+.habit-chip .hc-icon { font-size: 15px; line-height: 1; }
+.habit-chip .hc-cnt { font-family: var(--font-mono); font-size: 11px; opacity: .8; }
+.qc-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.qc-grid .label { margin-bottom: 6px; }
+.qc-rate { display: inline-flex; gap: 4px; align-items: center; flex-wrap: wrap; }
+.qc-rate button { width: 34px; height: 34px; border-radius: 9px; border: 1px solid var(--line); background: var(--surface-2); color: var(--fg-2); font-weight: 600; font-size: 13px; font-family: var(--font-num); transition: all .2s var(--spring); }
+.qc-rate button:hover { transform: translateY(-1px); border-color: var(--line-2); color: var(--fg); }
+.qc-rate button.active { background: var(--accent); color: var(--accent-ink); border-color: transparent; box-shadow: 0 0 14px -4px var(--accent); }
+.next-item { padding: 8px 6px; margin: 0 -6px; border-radius: 10px; cursor: pointer; gap: 10px; transition: background .2s; }
+.next-item:hover { background: var(--surface-2); }
+.next-item.first .bold { font-size: 15px; }
+.proj-mini { cursor: pointer; padding: 6px 6px; margin: 0 -6px; border-radius: 10px; transition: background .2s; }
+.proj-mini:hover { background: var(--surface-2); }
+.reflect textarea { min-height: 56px; }
+@media (max-width: 600px) {
+  .qc-grid { grid-template-columns: 1fr; gap: 10px; }
+  .qc-rate button { width: 38px; height: 38px; }
+  .habit-chip { padding: 9px 12px; }
+}
+
+/* ---------- Модульные страницы ---------- */
+.blocks-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; align-items: start; }
+.block > .card, .block > form.card { margin: 0; }
+.layout-item { gap: 8px; }
+.layout-item.is-off .title { color: var(--fg-3); text-decoration: line-through; }
+.layout-item input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--accent); }
+
 /* ---------- Toasts ---------- */
 #toasts { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 8px; z-index: 200; pointer-events: none; }
 .toast { background: var(--fg); color: var(--bg); padding: 10px 16px; border-radius: 999px; font-size: 13px; font-weight: 600; box-shadow: 0 16px 40px -10px rgba(0,0,0,0.4); animation: toast-in .4s var(--spring); display: flex; align-items: center; gap: 8px; }

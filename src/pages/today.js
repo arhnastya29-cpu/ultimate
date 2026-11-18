@@ -1,7 +1,12 @@
+// Главная: дата и статус → фокус дня (до 3 задач) → ближайшее событие → быстрое добавление →
+// строка привычек → быстрый чек-ин → только актуальные модули → вечерняя рефлексия.
 import { db } from '../db.js';
-import { esc, icon, today, addDays, fmtDate, fmtDateLong, fmtMinutes, fmtNum, fmtMoney, progressBar, ring, checkBtn, on, toast, startOfWeek, weekDays, lastNDays, sum, monthKey, plural, clamp } from '../ui.js';
+import { composeBlocks, customizeButton, bindCustomize } from '../blocks.js';
+import { esc, icon, today, addDays, fmtDate, fmtDateLong, fmtMinutes, fmtNum, fmtMoney, progressBar, checkBtn, on, toast, weekDays, lastNDays, sum, monthKey, plural, daysBetween, clamp } from '../ui.js';
 
 export const title = 'Сегодня';
+
+let showRest = false;   // раскрыт ли список остальных задач дня
 
 function greeting() {
   const h = new Date().getHours();
@@ -10,216 +15,293 @@ function greeting() {
   if (h < 18) return 'Добрый день';
   return 'Добрый вечер';
 }
+const dayWord = (n) => plural(n, 'день', 'дня', 'дней');
+
+// Разбор быстрого ввода: «! купить билеты завтра» → важная задача на завтра
+function parseQuick(raw, d) {
+  let title = raw.trim(); let priority = 2; let date = d;
+  if (title.startsWith('!')) { priority = 1; title = title.slice(1).trim(); }
+  if (/\s+завтра$/i.test(title)) { date = addDays(d, 1); title = title.replace(/\s+завтра$/i, ''); }
+  else if (/\s+послезавтра$/i.test(title)) { date = addDays(d, 2); title = title.replace(/\s+послезавтра$/i, ''); }
+  else if (/\s+инбокс$/i.test(title)) { date = null; title = title.replace(/\s+инбокс$/i, ''); }
+  return { title, priority, date };
+}
 
 export async function render(root, { navigate }) {
   const s = db.settings();
   const d = today();
+  const hour = new Date().getHours();
   const wd = (new Date().getDay() + 6) % 7;
+  const week = weekDays(d);
+  const two = lastNDays(14, d);
+  const projName = (id) => (id && db.get('projects', id)?.name) || '';
 
-  // --- Задачи ---
+  // ---------- Задачи и фокус ----------
   const tasks = db.all('tasks');
-  const todayTasks = tasks.filter(t => t.date === d && !t.done).sort((a, b) => (a.priority || 2) - (b.priority || 2));
-  const doneToday = tasks.filter(t => t.done && (t.doneAt || '').slice(0, 10) === d);
+  const todayTasks = tasks.filter(t => t.date === d && !t.done).sort((a, b) => (a.priority || 2) - (b.priority || 2) || (b.projectId ? 1 : 0) - (a.projectId ? 1 : 0));
+  const doneToday = tasks.filter(t => t.done && String(t.doneAt || '').slice(0, 10) === d);
   const overdue = tasks.filter(t => t.date && t.date < d && !t.done);
-  const goals = db.all('goals').filter(g => g.status === 'active');
+  let focus = todayTasks.filter(t => t.focusDate === d);
+  const manualFocus = focus.length > 0;
+  if (!manualFocus) focus = todayTasks.slice(0, 3);
+  focus = focus.slice(0, 3);
+  const focusDone = doneToday.filter(t => t.focusDate === d);
+  const rest = todayTasks.filter(t => !focus.includes(t));
 
-  // --- Привычки ---
+  // ---------- Ближайшее событие / дедлайн ----------
+  const upcoming = [];
+  for (const t of tasks) if (!t.done && t.date && t.date > d) upcoming.push({ date: t.date, title: t.title, kind: 'задача', page: 'goals' });
+  for (const p of db.all('projects')) if (p.status !== 'done' && p.deadline && p.deadline >= d) upcoming.push({ date: p.deadline, title: p.name, kind: 'дедлайн проекта', page: 'projects', params: { id: p.id } });
+  for (const g of db.all('goals')) if (g.status === 'active' && g.deadline && g.deadline >= d) upcoming.push({ date: g.deadline, title: g.title, kind: 'дедлайн цели', page: 'goals' });
+  for (const x of db.all('shadowTasks')) if (!x.done && x.deadline && x.deadline >= d) upcoming.push({ date: x.deadline, title: x.title, kind: 'задача от CEO', page: 'shadow' });
+  for (const x of db.all('healthTodos')) if (!x.done && x.date && x.date >= d) upcoming.push({ date: x.date, title: x.title, kind: x.type === 'appointment' ? 'приём' : 'здоровье', page: 'health' });
+  upcoming.sort((a, b) => a.date.localeCompare(b.date));
+  const next = upcoming.slice(0, 2);
+  const overdueAll = overdue.length + db.all('shadowTasks').filter(x => !x.done && x.deadline && x.deadline < d).length + db.all('projects').filter(p => p.status !== 'done' && p.deadline && p.deadline < d).length;
+
+  // ---------- Привычки ----------
   const habits = db.all('habits').filter(h => !h.archived && (!h.days?.length || h.days.includes(wd))).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
   const hlogs = db.all('habitLogs').filter(l => l.date === d);
-  const habitDone = (h) => (hlogs.find(l => l.habitId === h.id)?.count || 0) >= (h.target || 1);
+  const habitCount = (h) => hlogs.find(l => l.habitId === h.id)?.count || 0;
+  const habitDone = (h) => habitCount(h) >= (h.target || 1);
   const habitsDoneN = habits.filter(habitDone).length;
 
-  // --- Питание ---
-  const meals = db.all('meals').filter(m => m.date === d);
-  const kcal = sum(meals, m => m.kcal), protein = sum(meals, m => m.protein);
-  const dayLog = db.all('dayLogs').find(x => x.date === d);
-  const water = dayLog?.waterMl || 0;
+  // ---------- Чек-ин ----------
+  const sleep = db.all('sleepLogs').find(x => x.date === d);
+  const checkin = db.all('checkins').find(c => c.date === d);
+  const journal = db.all('journal').find(j => j.date === d);
 
-  // --- Тренировки ---
+  // ---------- Модули: показываем только актуальные ----------
+  const meals = db.all('meals').filter(m => m.date === d);
+  const dayLog = db.all('dayLogs').find(x => x.date === d);
+  const nutritionUsed = meals.length || dayLog || db.all('meals').some(m => two.includes(m.date));
+  const kcal = sum(meals, m => m.kcal), protein = sum(meals, m => m.protein), water = dayLog?.waterMl || 0;
+
   const workouts = db.all('workouts');
   const wToday = workouts.filter(w => w.date === d);
+  const wWeek = workouts.filter(w => week.includes(w.date)).length;
   const lastW = [...workouts].sort((a, b) => b.date.localeCompare(a.date))[0];
-  const wWeek = workouts.filter(w => weekDays(d).includes(w.date)).length;
+  const workoutsUsed = wToday.length || workouts.some(w => two.includes(w.date));
+  const WTYPE = { strength: 'Силовая', cardio: 'Кардио', mobility: 'Мобильность', other: 'Другое' };
 
-  // --- Сон ---
-  const sleep = db.all('sleepLogs').find(x => x.date === d);
+  const projects = db.all('projects').filter(p => p.status === 'active').sort((a, b) => (a.priority || 2) - (b.priority || 2) || (a.deadline || '9999').localeCompare(b.deadline || '9999')).slice(0, 3);
+  const shadowOpen = db.all('shadowTasks').filter(x => !x.done).sort((a, b) => (a.deadline || '9999').localeCompare(b.deadline || '9999')).slice(0, 3);
+  const goals = db.all('goals').filter(g => g.status === 'active');
+  const goalProgress = (g) => g.keyResults?.length ? Math.round(100 * g.keyResults.filter(k => k.done).length / g.keyResults.length) : (g.progress || 0);
+  const nearGoals = [...goals].sort((a, b) => (a.deadline || '9999').localeCompare(b.deadline || '9999')).slice(0, 3);
 
-  // --- Обучение ---
-  const week = weekDays(d);
   const sessions = db.all('studySessions').filter(x => week.includes(x.date));
   const studyMin = sum(sessions, x => x.minutes);
-  const studyToday = sum(sessions.filter(x => x.date === d), x => x.minutes);
   const dueCards = db.all('flashcards').filter(c => !c.due || c.due <= d).length;
-  const activeItems = db.all('learningItems').filter(i => i.status === 'active').slice(0, 3);
+  const activeItems = db.all('learningItems').filter(i => i.status === 'active').slice(0, 2);
+  const learningUsed = dueCards || activeItems.length || sessions.length;
 
-  // --- Здоровье ---
-  const checkin = db.all('checkins').find(c => c.date === d);
   const meds = db.all('medications').filter(m => m.active !== false);
   const medLogs = db.all('medLogs').filter(l => l.date === d);
   const medSlots = meds.flatMap(m => (m.times?.length ? m.times : ['morning']).map(t => ({ m, t })));
   const medsTaken = medSlots.filter(({ m, t }) => medLogs.some(l => l.medId === m.id && l.time === t)).length;
-  const healthTodos = db.all('healthTodos').filter(t => !t.done && t.date && t.date <= addDays(d, 7)).sort((a, b) => a.date.localeCompare(b.date));
+  const healthUsed = medSlots.length > 0;
 
-  // --- Рефлексия ---
-  const journal = db.all('journal').find(j => j.date === d);
-
-  // --- Финансы ---
   const tx = db.all('transactions');
   const spentToday = sum(tx.filter(t => t.type === 'expense' && t.date === d), t => t.amount);
-  const spentMonth = sum(tx.filter(t => t.type === 'expense' && t.date.slice(0, 7) === monthKey(d)), t => t.amount);
+  const spentMonth = sum(tx.filter(t => t.type === 'expense' && String(t.date).slice(0, 7) === monthKey(d)), t => t.amount);
+  const financeUsed = tx.some(t => String(t.date).slice(0, 7) === monthKey(d));
 
-  // --- Цели с ближайшим дедлайном ---
-  const goalProgress = (g) => g.keyResults?.length ? Math.round(100 * g.keyResults.filter(k => k.done).length / g.keyResults.length) : (g.progress || 0);
-  const nearGoals = [...goals].sort((a, b) => (a.deadline || '9999').localeCompare(b.deadline || '9999')).slice(0, 4);
+  // ---------- Статус одной строкой ----------
+  const status = [
+    todayTasks.length + doneToday.length ? `задачи ${doneToday.length}/${todayTasks.length + doneToday.length}` : 'задач на день нет',
+    habits.length ? `привычки ${habitsDoneN}/${habits.length}` : '',
+    sleep ? `сон ${fmtNum(sleep.hours, 1)} ч` : '',
+    overdueAll ? `<span class="bad">просрочено ${overdueAll}</span>` : '',
+  ].filter(Boolean).join(' · ');
 
-  // --- Фокус-подсказки (что ещё не сделано) ---
-  const nudges = [];
-  if (!sleep) nudges.push({ text: 'Запишите, как спали', page: 'sleep' });
-  if (!checkin) nudges.push({ text: 'Отметьте самочувствие', page: 'health' });
-  if (dueCards) nudges.push({ text: `${dueCards} ${plural(dueCards, 'карточка', 'карточки', 'карточек')} английского к повторению`, page: 'learning' });
-  if (!todayTasks.length && !doneToday.length) nudges.push({ text: 'План на день пуст — добавьте задачи', page: 'goals' });
-  if (overdue.length) nudges.push({ text: `${overdue.length} ${plural(overdue.length, 'просроченная задача', 'просроченные задачи', 'просроченных задач')}`, page: 'goals' });
-  if (new Date().getHours() >= 19 && !journal) nudges.push({ text: 'Вечер — время для рефлексии', page: 'journal' });
-  if (protein < s.proteinTarget * 0.5 && new Date().getHours() >= 15) nudges.push({ text: `Белка пока ${fmtNum(protein)} г из ${s.proteinTarget}`, page: 'nutrition' });
+  const rate = (name, value, labels) => `<div class="qc-rate" data-rate="${name}">${[1, 2, 3, 4, 5].map(v => `<button type="button" class="${Number(value) === v ? 'active' : ''}" data-v="${v}" title="${labels?.[v - 1] || v}">${v}</button>`).join('')}</div>`;
+  const taskRow = (t, { big = false } = {}) => `<div class="list-item ${big ? 'focus-item' : ''}">
+      ${checkBtn(!!t.done, `data-task="${esc(t.id)}" aria-label="Выполнено"`)}
+      <div class="main">
+        <div class="title ${t.done ? 'strike' : ''}">${esc(t.title)}</div>
+        <div class="sub row wrap" style="gap:6px">${t.priority === 1 ? '<span class="pill bad">важно</span>' : ''}${t.projectId && projName(t.projectId) ? `<span class="pill accent ellipsis" style="max-width:160px">${esc(projName(t.projectId))}</span>` : ''}${t.estimateMin ? `<span>${esc(fmtMinutes(t.estimateMin))}</span>` : ''}</div>
+      </div>
+      ${big
+        ? (t.focusDate === d ? `<button type="button" class="icon-btn sm" data-unfocus="${esc(t.id)}" aria-label="Убрать из фокуса" data-tip="Убрать из фокуса">${icon('x')}</button>` : '')
+        : `<button type="button" class="icon-btn sm" data-focus="${esc(t.id)}" aria-label="В фокус" data-tip="В фокус дня">${icon('star')}</button>`}
+    </div>`;
 
-  const WTYPE = { strength: 'Силовая', cardio: 'Кардио', mobility: 'Мобильность', other: 'Другое' };
-  const prio = (p) => p === 1 ? '<span class="pill bad">важно</span>' : p === 3 ? '' : '<span class="pill warn">средне</span>';
-  const goalName = (id) => id ? db.get('goals', id)?.title : '';
+  const evening = hour >= 18 || journal;
 
-  root.innerHTML = `
+  // ---------- Блоки страницы (порядок/видимость настраиваются пользователем) ----------
+  const blocks = [
+    { id: 'focus', title: 'Фокус дня', col: 1, html: `<div class="card focus-card">
+          <div class="section-title"><h2>${icon('target')} Фокус дня</h2><span class="tiny muted">${manualFocus ? 'выбрано вручную' : focus.length ? 'по приоритету · отметьте ★, чтобы выбрать свои' : ''}</span></div>
+          ${focus.length || focusDone.length
+            ? `<div class="list">${focus.map(t => taskRow(t, { big: true })).join('')}${focusDone.map(t => taskRow(t, { big: true })).join('')}</div>`
+            : `<div class="empty tiny">Выберите до трёх задач, которые сделают день успешным. Добавьте задачу ниже или отметьте ★ в списке.</div>`}
+          ${rest.length ? `<button type="button" class="link" data-toggle-rest style="margin-top:8px">${showRest ? 'Скрыть' : `Ещё ${rest.length} ${plural(rest.length, 'задача', 'задачи', 'задач')} на сегодня`}</button>
+            ${showRest ? `<div class="list" style="margin-top:4px">${rest.map(t => taskRow(t)).join('')}</div>` : ''}` : ''}
+          ${doneToday.filter(t => t.focusDate !== d).length ? `<div class="tiny faint" style="margin-top:8px">${icon('check')} сделано сегодня: ${doneToday.filter(t => t.focusDate !== d).length}</div>` : ''}
+          ${overdue.length ? `<div class="tiny bad" style="margin-top:8px">${icon('clock')} Просрочено задач: ${overdue.length} · <button class="link" data-go="goals">разобрать</button></div>` : ''}
+        </div>` },
+    { id: 'quick', title: 'Быстрое добавление', col: 1, html: `<form class="card row quick-add" id="quickTask" style="gap:8px">
+          <input class="input grow" name="title" placeholder="Добавить задачу…  «!» в начале — важная, «завтра» в конце — на завтра" autocomplete="off">
+          <button class="icon-btn primary" type="submit" aria-label="Добавить">${icon('plus')}</button>
+        </form>` },
+    { id: 'habits', title: 'Привычки', col: 1, html: `<div class="card">
+          <div class="section-title"><h2>${icon('repeat')} Привычки</h2><span class="tiny muted">${habits.length ? `${habitsDoneN}/${habits.length}` : ''} <button class="link" data-go="habits">все</button></span></div>
+          ${habits.length ? `<div class="habit-row">${habits.map(h => `<button type="button" class="habit-chip ${habitDone(h) ? 'done' : ''}" data-habit="${esc(h.id)}"><span class="hc-icon">${esc(h.icon || '✓')}</span><span class="hc-name">${esc(h.name)}</span>${(h.target || 1) > 1 ? `<span class="hc-cnt">${habitCount(h)}/${h.target}</span>` : ''}</button>`).join('')}</div>` : '<div class="empty tiny">Нет привычек на сегодня</div>'}
+        </div>` },
+    { id: 'checkin', title: 'Чек-ин: сон, энергия, настроение', col: 1, html: `<div class="card qc">
+          <div class="section-title"><h2>${icon('heart')} Как вы сегодня</h2><span class="tiny muted">${sleep && checkin?.mood && checkin?.energy ? 'записано ✓' : 'одно касание'}</span></div>
+          <div class="qc-grid">
+            <div><div class="label caps">Сон, часов</div><div class="qc-rate" data-sleep>${[5, 6, 7, 8, 9].map(v => `<button type="button" class="${sleep && Math.round(sleep.hours) === v ? 'active' : ''}" data-v="${v}">${v}</button>`).join('')}${sleep && ![5, 6, 7, 8, 9].includes(Math.round(sleep.hours)) ? `<span class="tiny muted">${fmtNum(sleep.hours, 1)}</span>` : ''}</div></div>
+            <div><div class="label caps">Энергия</div>${rate('energy', checkin?.energy, ['нет сил', 'мало', 'нормально', 'хорошо', 'полна сил'])}</div>
+            <div><div class="label caps">Настроение</div>${rate('mood', checkin?.mood, ['плохо', 'так себе', 'ровно', 'хорошо', 'отлично'])}</div>
+          </div>
+        </div>` },
+    { id: 'reflect', title: 'Вечерняя рефлексия', col: 1, html: evening ? `<div class="card reflect">
+          <div class="section-title"><h2>${icon('moon')} Вечерняя рефлексия</h2><button class="link" data-go="journal">${journal ? 'открыть дневник' : 'подробнее'}</button></div>
+          <form id="reflectForm" class="form">
+            <div class="field"><label>Главное событие дня</label><input name="highlight" class="input" value="${esc(journal?.highlight || '')}" placeholder="Одной строкой"></div>
+            <div class="form-row">
+              <div class="field"><label>Что получилось</label><textarea name="wentWell" rows="2" placeholder="Чем довольна">${esc(journal?.wentWell || '')}</textarea></div>
+              <div class="field"><label>Что улучшить</label><textarea name="improve" rows="2" placeholder="Что сделать иначе завтра">${esc(journal?.improve || '')}</textarea></div>
+            </div>
+            <div class="row between wrap" style="gap:8px"><span class="tiny faint">${journal ? 'сохранено' : 'сохраняется кнопкой'}</span><button class="btn sm" type="submit">${icon('check')} Сохранить</button></div>
+          </form>
+        </div>` : `<div class="tiny faint" style="padding:0 6px">${icon('moon')} После 18:00 здесь появится вечерняя рефлексия</div>` },
+    { id: 'next', title: 'Ближайшее событие', col: 2, html: `<div class="card next-card">
+          <div class="section-title"><h2>${icon('calendar')} Ближайшее</h2>${overdueAll ? `<span class="pill bad">просрочено ${overdueAll}</span>` : ''}</div>
+          ${next.length ? `<div class="stack tight">${next.map((u, i) => {
+            const n = daysBetween(d, u.date);
+            return `<div class="row between next-item ${i === 0 ? 'first' : ''}" data-go="${esc(u.page)}" ${u.params ? `data-params='${esc(JSON.stringify(u.params))}'` : ''}>
+              <div class="main"><div class="${i === 0 ? 'bold' : 'small'} ellipsis">${esc(u.title)}</div><div class="tiny muted">${esc(u.kind)}</div></div>
+              <div class="tiny ${n === 0 ? 'warn bold' : 'muted'}" style="white-space:nowrap">${n === 0 ? 'сегодня' : n === 1 ? 'завтра' : `через ${n} ${dayWord(n)}`}<br><span class="faint">${esc(fmtDate(u.date, { relative: false }))}</span></div>
+            </div>`;
+          }).join('')}</div>` : '<div class="muted small">Ближайших дедлайнов нет. Можно выдохнуть.</div>'}
+        </div>` },
+    { id: 'shadow', title: 'Shadow: задачи от CEO', col: 2, html: shadowOpen.length ? `<div class="card">
+          <div class="section-title"><h2>${icon('briefcase')} Shadow</h2><button class="link" data-go="shadow">открыть</button></div>
+          <div class="list">${shadowOpen.map(x => `<div class="list-item" style="padding:7px 0"><div class="main"><div class="title small">${esc(x.title)}</div></div>${x.deadline ? `<span class="tiny ${x.deadline < d ? 'bad' : 'muted'}">${esc(fmtDate(x.deadline))}</span>` : ''}</div>`).join('')}</div>
+        </div>` : '' },
+    { id: 'projects', title: 'Проекты', col: 2, html: projects.length ? `<div class="card">
+          <div class="section-title"><h2>${icon('layers')} Проекты</h2><button class="link" data-go="projects">все</button></div>
+          <div class="stack tight">${projects.map(p => `<div class="proj-mini" data-go="projects" data-params='${esc(JSON.stringify({ id: p.id }))}'>
+            <div class="row between"><span class="bold small ellipsis">${esc(p.name)}</span><span class="tiny mono muted">${clamp(Number(p.progress) || 0, 0, 100)}%</span></div>
+            ${progressBar(clamp(Number(p.progress) || 0, 0, 100), 100, 'thin')}
+            ${p.nextStep ? `<div class="tiny muted ellipsis" style="margin-top:4px">${icon('zap')} ${esc(p.nextStep)}</div>` : ''}
+          </div>`).join('')}</div>
+        </div>` : '' },
+    { id: 'goals', title: 'Цели', col: 2, html: nearGoals.length ? `<div class="card">
+          <div class="section-title"><h2>${icon('target')} Цели</h2><button class="link" data-go="goals">все</button></div>
+          <div class="stack tight">${nearGoals.map(g => {
+            const p = goalProgress(g); const left = g.deadline ? daysBetween(d, g.deadline) : null;
+            return `<div><div class="row between"><div class="bold small ellipsis">${esc(g.title)}</div><div class="tiny ${left != null && left < 0 ? 'bad' : 'muted'}">${left == null ? '' : left < 0 ? `просрочено на ${-left} ${dayWord(-left)} · ` : left === 0 ? 'сегодня · ' : `${left} ${dayWord(left)} · `}${p}%</div></div>${progressBar(p, 100, 'thin')}</div>`;
+          }).join('')}</div>
+        </div>` : '' },
+    { id: 'nutrition', title: 'Питание', col: 2, html: nutritionUsed ? `<div class="card">
+          <div class="section-title"><h2>${icon('utensils')} Питание</h2><button class="link" data-go="nutrition">добавить</button></div>
+          <div class="row wrap" style="gap:12px">
+            <div><div class="label">Калории</div><div class="value" style="font-size:20px">${fmtNum(kcal)}<small>/ ${s.kcalTarget}</small></div></div>
+            <div><div class="label">Белок</div><div class="value" style="font-size:20px">${fmtNum(protein)}<small>/ ${s.proteinTarget} г</small></div></div>
+            <div class="grow"><div class="label">Вода</div><div class="row" style="gap:6px"><span class="value" style="font-size:20px">${fmtNum(water)}<small>/ ${s.waterTarget}</small></span><button class="btn secondary sm" data-water="250">+250</button><button class="btn secondary sm" data-water="500">+500</button></div></div>
+          </div>
+          ${progressBar(protein, s.proteinTarget, 'thin ' + (protein >= s.proteinTarget ? 'good' : 'info'))}
+        </div>` : '' },
+    { id: 'workouts', title: 'Тренировка', col: 2, html: workoutsUsed ? `<div class="card">
+          <div class="section-title"><h2>${icon('dumbbell')} Тренировка</h2><button class="link" data-go="workouts">${wToday.length ? 'открыть' : 'записать'}</button></div>
+          ${wToday.length ? wToday.map(w => `<div class="row between"><div><div class="bold small">${esc(w.title || 'Тренировка')}</div><div class="tiny muted">${esc(WTYPE[w.type] || w.type)} · ${fmtMinutes(w.durationMin)}</div></div><span class="pill good">${icon('check')} сегодня</span></div>`).join('')
+            : `<div class="row between"><div class="small muted">${lastW ? `Последняя: ${esc(lastW.title || WTYPE[lastW.type] || lastW.type)} · ${esc(fmtDate(lastW.date))}` : 'Ещё нет тренировок'}</div><span class="pill">${wWeek} на неделе</span></div>`}
+        </div>` : '' },
+    { id: 'learning', title: 'Обучение', col: 2, html: learningUsed ? `<div class="card">
+          <div class="section-title"><h2>${icon('brain')} Обучение</h2><button class="link" data-go="learning">открыть</button></div>
+          <div class="stack tight small">
+            <div class="row between"><span class="muted">За неделю</span><span class="mono">${fmtMinutes(studyMin)} / ${fmtMinutes(s.learningWeeklyMinutes)}</span></div>
+            ${dueCards ? `<div class="row between"><span>${icon('layers')} Карточек к повторению: ${dueCards}</span><button class="btn sm" data-go="learning">Повторить</button></div>` : ''}
+            ${activeItems.map(i => `<div class="row between"><span class="ellipsis">${icon('book')} ${esc(i.title)}</span><span class="tiny muted">${i.progress || 0}%</span></div>`).join('')}
+          </div>
+        </div>` : '' },
+    { id: 'health', title: 'Лекарства', col: 2, html: healthUsed ? `<div class="card">
+          <div class="section-title"><h2>${icon('pill')} Лекарства</h2><button class="link" data-go="health">открыть</button></div>
+          <div class="row between"><span class="small muted">Принято сегодня</span><span class="pill ${medsTaken === medSlots.length ? 'good' : ''}">${medsTaken}/${medSlots.length}</span></div>
+        </div>` : '' },
+    { id: 'finance', title: 'Финансы', col: 2, html: financeUsed ? `<div class="card">
+          <div class="section-title"><h2>${icon('wallet')} Финансы</h2><button class="link" data-go="finance">добавить</button></div>
+          <div class="row between"><div><div class="label">Сегодня</div><div class="value" style="font-size:20px">${fmtMoney(spentToday, s.currency)}</div></div><div style="text-align:right"><div class="label">За месяц</div><div class="value" style="font-size:20px">${fmtMoney(spentMonth, s.currency)}</div></div></div>
+        </div>` : '' },
+  ];
+
+  root.innerHTML = `<div>
     <div class="page-head">
       <div>
         <div class="eyebrow">${esc(fmtDateLong(d))}</div>
         <h1>${greeting()}${s.name ? ', ' + esc(s.name) : ''}</h1>
+        <div class="small muted" style="margin-top:6px">${status}</div>
       </div>
       <div class="actions">
-        <button class="btn secondary sm" data-go="journal">${icon('pen')} Рефлексия</button>
+        ${customizeButton('today')}
+        <button class="btn secondary sm" data-go="journal">${icon('pen')} Дневник</button>
         <button class="btn sm" data-add-task>${icon('plus')} Задача</button>
       </div>
     </div>
+    ${composeBlocks('today', blocks)}
+  </div>`;
+  const view = root.firstElementChild;
+  bindCustomize(view, 'today', blocks);
 
-    ${nudges.length ? `<div class="chips" style="margin-bottom:16px">${nudges.map(n => `<button class="chip" data-go="${n.page}">${icon('zap')}&nbsp;${esc(n.text)}</button>`).join('')}</div>` : ''}
-
-    <div class="grid-4" style="margin-bottom:16px">
-      <div class="stat"><div class="label">${icon('target')} Задачи</div><div class="value">${doneToday.length}<small>/ ${doneToday.length + todayTasks.length}</small></div>${progressBar(doneToday.length, doneToday.length + todayTasks.length, 'thin good')}</div>
-      <div class="stat"><div class="label">${icon('repeat')} Привычки</div><div class="value">${habitsDoneN}<small>/ ${habits.length}</small></div>${progressBar(habitsDoneN, habits.length, 'thin')}</div>
-      <div class="stat"><div class="label">${icon('utensils')} Белок</div><div class="value">${fmtNum(protein)}<small>/ ${s.proteinTarget} г</small></div>${progressBar(protein, s.proteinTarget, 'thin ' + (protein >= s.proteinTarget ? 'good' : 'info'))}</div>
-      <div class="stat"><div class="label">${icon('brain')} Обучение</div><div class="value">${fmtNum(studyMin)}<small>/ ${s.learningWeeklyMinutes} мин</small></div>${progressBar(studyMin, s.learningWeeklyMinutes, 'thin')}<div class="sub">неделя · сегодня ${fmtMinutes(studyToday)}</div></div>
-    </div>
-
-    <div class="grid-2" style="align-items:start">
-      <div class="stack">
-        <div class="card">
-          <div class="section-title"><h2>План на день</h2><button class="link" data-go="goals">Все задачи</button></div>
-          <form class="row" id="quickTask" style="margin-bottom:8px">
-            <input class="input grow" name="title" placeholder="Новая задача на сегодня…" autocomplete="off">
-            <button class="icon-btn primary" type="submit" aria-label="Добавить">${icon('plus')}</button>
-          </form>
-          ${overdue.length ? `<div class="tiny bad" style="margin-bottom:6px">${icon('clock')} Просрочено: ${overdue.length} — <button class="link" data-go="goals">посмотреть</button></div>` : ''}
-          <div class="list">
-            ${todayTasks.map(t => `<div class="list-item">
-              ${checkBtn(false, `data-task="${t.id}"`)}
-              <div class="main"><div class="title">${esc(t.title)}</div><div class="sub row wrap" style="gap:6px">${t.projectId && db.get('projects', t.projectId) ? `<span class="pill accent ellipsis" style="max-width:160px">${esc(db.get('projects', t.projectId).name)}</span>` : ''}${[t.estimateMin ? fmtMinutes(t.estimateMin) : '', goalName(t.goalId)].filter(Boolean).map(v => `<span>${esc(v)}</span>`).join('')}</div></div>
-              ${prio(t.priority)}
-            </div>`).join('')}
-            ${doneToday.map(t => `<div class="list-item">
-              ${checkBtn(true, `data-task="${t.id}"`)}
-              <div class="main"><div class="title strike">${esc(t.title)}</div></div>
-            </div>`).join('')}
-            ${!todayTasks.length && !doneToday.length ? '<div class="empty tiny">Пока пусто. Что сделает день успешным?</div>' : ''}
-          </div>
-        </div>
-
-        <div class="card">
-          <div class="section-title"><h2>Привычки</h2><button class="link" data-go="habits">Подробнее</button></div>
-          ${habits.length ? `<div class="list">${habits.map(h => {
-            const cnt = hlogs.find(l => l.habitId === h.id)?.count || 0;
-            return `<div class="list-item">${checkBtn(cnt >= (h.target || 1), `data-habit="${h.id}"`)}
-              <div class="main"><div class="title">${esc(h.icon || '')} ${esc(h.name)}</div>${(h.target || 1) > 1 ? `<div class="sub">${cnt} / ${h.target}</div>` : ''}</div></div>`;
-          }).join('')}</div>` : '<div class="empty tiny">Нет привычек на сегодня</div>'}
-        </div>
-
-        <div class="card">
-          <div class="section-title"><h2>Цели в фокусе</h2><button class="link" data-go="goals">Все цели</button></div>
-          ${nearGoals.length ? `<div class="stack">${nearGoals.map(g => {
-            const p = goalProgress(g);
-            const left = g.deadline ? Math.round((new Date(g.deadline) - new Date(d)) / 86400000) : null;
-            return `<div><div class="row between"><div class="bold small ellipsis">${esc(g.title)}</div><div class="tiny ${left != null && left < 0 ? 'bad' : 'muted'}">${left == null ? '' : left < 0 ? `просрочено на ${-left} дн.` : left === 0 ? 'сегодня' : `${left} дн.`} · ${p}%</div></div>${progressBar(p, 100, 'thin')}</div>`;
-          }).join('')}</div>` : '<div class="empty tiny">Поставьте первую цель</div>'}
-        </div>
-      </div>
-
-      <div class="stack">
-        <div class="card">
-          <div class="section-title"><h2>Питание</h2><button class="link" data-go="nutrition">Добавить</button></div>
-          <div class="row" style="gap:16px">
-            ${ring(clamp(kcal / s.kcalTarget * 100, 0, 100), { size: 92, label: fmtNum(kcal), sub: `из ${s.kcalTarget}` })}
-            <div class="grow stack tight">
-              <div><div class="row between tiny"><span>Белки</span><span class="mono">${fmtNum(protein)} / ${s.proteinTarget} г</span></div>${progressBar(protein, s.proteinTarget, 'thin good')}</div>
-              <div><div class="row between tiny"><span>Жиры</span><span class="mono">${fmtNum(sum(meals, m => m.fat))} / ${s.fatTarget} г</span></div>${progressBar(sum(meals, m => m.fat), s.fatTarget, 'thin warn')}</div>
-              <div><div class="row between tiny"><span>Углеводы</span><span class="mono">${fmtNum(sum(meals, m => m.carbs))} / ${s.carbsTarget} г</span></div>${progressBar(sum(meals, m => m.carbs), s.carbsTarget, 'thin info')}</div>
-              <div class="row between wrap tiny" style="margin-top:4px;gap:6px"><span style="white-space:nowrap">${icon('droplet')} Вода <b>${fmtNum(water)}</b> / ${s.waterTarget} мл</span><span class="row" style="gap:4px"><button class="btn secondary sm" data-water="250">+250</button><button class="btn secondary sm" data-water="500">+500</button></span></div>
-            </div>
-          </div>
-        </div>
-
-        <div class="grid-2">
-          <div class="card">
-            <div class="section-title"><h2>Сон</h2><button class="link" data-go="sleep">${sleep ? 'Изменить' : 'Записать'}</button></div>
-            ${sleep ? `<div class="value">${fmtNum(sleep.hours, 1)}<small>ч</small></div><div class="tiny muted">${esc(sleep.bedTime || '')}${sleep.bedTime ? ' → ' : ''}${esc(sleep.wakeTime || '')} · качество ${sleep.quality || '—'}/5 · энергия ${sleep.energy || '—'}/5</div>` : '<div class="muted small">Нет записи за эту ночь</div>'}
-          </div>
-          <div class="card">
-            <div class="section-title"><h2>Самочувствие</h2><button class="link" data-go="health">${checkin ? 'Изменить' : 'Отметить'}</button></div>
-            ${checkin ? `<div class="row wrap tiny" style="gap:6px"><span class="pill">настроение ${checkin.mood ?? '—'}</span><span class="pill">энергия ${checkin.energy ?? '—'}</span><span class="pill">стресс ${checkin.stress ?? '—'}</span>${checkin.weight ? `<span class="pill">${fmtNum(checkin.weight, 1)} кг</span>` : ''}</div>` : '<div class="muted small">Как вы себя чувствуете?</div>'}
-            ${medSlots.length ? `<div class="tiny muted" style="margin-top:8px">${icon('pill')} Лекарства: ${medsTaken}/${medSlots.length}</div>` : ''}
-            ${healthTodos.length ? `<div class="tiny" style="margin-top:6px">${healthTodos.slice(0, 2).map(t => `<div>${icon('calendar')} ${esc(t.title)} · <span class="${t.date < d ? 'bad' : 'muted'}">${esc(t.date)}</span></div>`).join('')}</div>` : ''}
-          </div>
-        </div>
-
-        <div class="card">
-          <div class="section-title"><h2>Тренировка</h2><button class="link" data-go="workouts">${wToday.length ? 'Открыть' : 'Записать'}</button></div>
-          ${wToday.length ? wToday.map(w => `<div class="row between"><div><div class="bold">${esc(w.title || 'Тренировка')}</div><div class="tiny muted">${esc(WTYPE[w.type] || w.type)} · ${fmtMinutes(w.durationMin)}${w.rpe ? ` · RPE ${w.rpe}` : ''}</div></div><span class="pill good">${icon('check')} сегодня</span></div>`).join('') :
-            `<div class="row between"><div class="small muted">${lastW ? `Последняя: ${esc(lastW.title || WTYPE[lastW.type] || lastW.type)} · ${esc(fmtDate(lastW.date))}` : 'Ещё нет тренировок'}</div><span class="pill">${wWeek} на этой неделе</span></div>`}
-        </div>
-
-        <div class="card">
-          <div class="section-title"><h2>Обучение</h2><button class="link" data-go="learning">Открыть</button></div>
-          <div class="stack tight small">
-            ${dueCards ? `<div class="row between"><span>${icon('layers')} Английский: ${dueCards} к повторению</span><button class="btn sm" data-go="learning">Повторить</button></div>` : '<div class="muted">Карточки английского повторены ✓</div>'}
-            ${activeItems.map(i => `<div class="row between"><span class="ellipsis">${icon('book')} ${esc(i.title)}</span><span class="tiny muted">${i.progress || 0}%</span></div>`).join('')}
-          </div>
-        </div>
-
-        <div class="card">
-          <div class="section-title"><h2>Финансы</h2><button class="link" data-go="finance">Добавить</button></div>
-          <div class="row between"><div><div class="label">Сегодня</div><div class="value" style="font-size:20px">${fmtMoney(spentToday, s.currency)}</div></div><div style="text-align:right"><div class="label">За месяц</div><div class="value" style="font-size:20px">${fmtMoney(spentMonth, s.currency)}</div></div></div>
-        </div>
-      </div>
-    </div>`;
-
-  on(root, 'click', '[data-go]', (e, t) => navigate(t.dataset.go));
-  on(root, 'click', '[data-task]', (e, t) => {
-    const task = db.get('tasks', t.dataset.task);
+  // ---------- события ----------
+  on(view, 'click', '[data-go]', (e, t) => {
+    if (e.target.closest('[data-task],[data-habit],[data-water],[data-focus],[data-unfocus]')) return;
+    let params = {}; try { params = t.dataset.params ? JSON.parse(t.dataset.params) : {}; } catch {}
+    navigate(t.dataset.go, params);
+  });
+  on(view, 'click', '[data-task]', (e, t) => {
+    const task = db.get('tasks', t.dataset.task); if (!task) return;
     db.update('tasks', task.id, { done: !task.done, doneAt: task.done ? null : new Date().toISOString() });
   });
-  on(root, 'click', '[data-habit]', (e, t) => {
-    const h = db.get('habits', t.dataset.habit);
-    const log = hlogs.find(l => l.habitId === h.id);
-    const target = h.target || 1;
-    const cur = log?.count || 0;
-    const next = cur >= target ? 0 : target > 1 ? cur + 1 : target;
-    if (log) db.update('habitLogs', log.id, { count: next }); else db.add('habitLogs', { habitId: h.id, date: d, count: next });
+  on(view, 'click', '[data-focus]', (e, t) => {
+    const n = tasks.filter(x => x.focusDate === d && !x.done).length;
+    if (n >= 3) { toast('В фокусе уже три задачи — уберите одну'); return; }
+    // первый ручной выбор: закрепляем и текущие автоматические, чтобы они не пропали
+    if (!manualFocus) for (const f of focus) db.update('tasks', f.id, { focusDate: d });
+    db.update('tasks', t.dataset.focus, { focusDate: d });
   });
-  on(root, 'click', '[data-water]', (e, t) => {
+  on(view, 'click', '[data-unfocus]', (e, t) => db.update('tasks', t.dataset.unfocus, { focusDate: null }));
+  on(view, 'click', '[data-toggle-rest]', () => { showRest = !showRest; render(root, { navigate }); });
+  on(view, 'click', '[data-habit]', (e, t) => {
+    const h = db.get('habits', t.dataset.habit); if (!h) return;
+    const log = hlogs.find(l => l.habitId === h.id);
+    const target = h.target || 1; const cur = log?.count || 0;
+    const nextV = cur >= target ? 0 : target > 1 ? cur + 1 : target;
+    if (log) db.update('habitLogs', log.id, { count: nextV }); else db.add('habitLogs', { habitId: h.id, date: d, count: nextV });
+  });
+  on(view, 'click', '[data-water]', (e, t) => {
     const add = Number(t.dataset.water);
     if (dayLog) db.update('dayLogs', dayLog.id, { waterMl: (dayLog.waterMl || 0) + add }); else db.add('dayLogs', { date: d, waterMl: add, steps: 0 });
   });
-  root.querySelector('#quickTask').addEventListener('submit', (e) => {
-    e.preventDefault();
-    const title = e.target.title.value.trim();
-    if (!title) return;
-    db.add('tasks', { title, date: d, priority: 2, done: false });
-    toast('Задача добавлена');
+  on(view, 'click', '[data-sleep] button', (e, b) => {
+    const hours = Number(b.dataset.v);
+    if (sleep) db.update('sleepLogs', sleep.id, { hours }); else db.add('sleepLogs', { date: d, bedTime: '', wakeTime: '', hours, quality: null, energy: null, notes: '' });
+    toast(`Сон: ${hours} ч`);
   });
-  on(root, 'click', '[data-add-task]', () => { root.querySelector('#quickTask input').focus(); });
+  on(view, 'click', '[data-rate] button', (e, b) => {
+    const name = b.closest('[data-rate]').dataset.rate; const v = Number(b.dataset.v);
+    if (checkin) db.update('checkins', checkin.id, { [name]: v });
+    else db.add('checkins', { date: d, mood: null, energy: null, stress: null, symptoms: [], notes: '', [name]: v });
+  });
+  view.querySelector('#quickTask')?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const { title: tt, priority, date } = parseQuick(e.target.title.value, d);
+    if (!tt) return;
+    db.add('tasks', { title: tt, date, priority, done: false, doneAt: null, goalId: null, projectId: null, streamId: null, notes: '', estimateMin: null, recurring: null });
+    toast(date === d ? 'Задача на сегодня добавлена' : date ? `Задача на ${fmtDate(date)}` : 'Задача в инбоксе');
+  });
+  on(view, 'click', '[data-add-task]', () => { const i = view.querySelector('#quickTask input'); if (i) i.focus(); else navigate('goals'); });
+  const rf = view.querySelector('#reflectForm');
+  if (rf) rf.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const f = e.target;
+    const patch = { highlight: f.highlight.value.trim(), wentWell: f.wentWell.value.trim(), improve: f.improve.value.trim() };
+    if (journal) db.update('journal', journal.id, patch);
+    else db.add('journal', { date: d, gratitude: '', lessons: '', mood: checkin?.mood || null, ...patch });
+    toast('Рефлексия сохранена');
+  });
 }

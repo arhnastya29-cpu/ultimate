@@ -38,7 +38,7 @@ export async function render(root, { params, navigate, page }) {
 | `shadowTasks` | задачи от CEO: `title, context, deadline (date|null), priority 1\|2\|3, done, doneAt?, result, receivedAt` |
 | `shadowNotes` | `type: 'advice'\|'note', title, body, date, tags: string[], pinned` |
 | `streams` | направления внутри проекта: `projectId, name, description, status: 'active'\|'paused'\|'done', order` |
-| `tasks` | `title, date (date|null = без даты/инбокс), priority: 1 (высокий)\|2\|3, goalId?, projectId?, streamId?, done bool, doneAt?, notes, estimateMin?, recurring?: 'daily'\|'weekly'\|null` |
+| `tasks` | `title, date (date|null = без даты/инбокс), priority: 1 (высокий)\|2\|3, goalId?, projectId?, streamId?, focusDate? (дата, когда задача в «фокусе дня» на главной, до 3 штук), done bool, doneAt?, notes, estimateMin?, recurring?: 'daily'\|'weekly'\|null` |
 | `checkins` | `date (уникальна), mood 1-5, energy 1-5, stress 1-5, symptoms: string[], weight?, notes` |
 | `labTests` | `date, name, value (number), unit, refLow?, refHigh?, notes` |
 | `healthTodos` | `title, date?, type: 'appointment'\|'test'\|'other', done bool, notes` |
