@@ -516,6 +516,48 @@ svg[aria-hidden="true"] { width: 1em; height: 1em; vertical-align: -0.15em; flex
 .idea-dots i { width: 7px; height: 7px; border-radius: 50%; background: var(--surface-3); display: inline-block; }
 .idea-dots.good i.on { background: var(--good); } .idea-dots.warn i.on { background: var(--warn); }
 
+/* ---------- Календарь ---------- */
+.cal-wd { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; margin-bottom: 6px; font-size: 11px; text-transform: uppercase; letter-spacing: .1em; color: var(--fg-3); font-weight: 600; text-align: center; }
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+.cal-cell { min-height: 92px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 6px; cursor: pointer; transition: border-color .2s, background .2s; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.cal-cell:hover { border-color: var(--line-2); }
+.cal-cell.is-out { opacity: .45; }
+.cal-cell.is-today { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent-soft); }
+.cal-cell.is-sel { background: var(--surface-2); }
+.cal-num { font-family: var(--font-num); font-size: 12px; color: var(--fg-2); }
+.cal-cell.is-today .cal-num { color: var(--accent); font-weight: 700; }
+.cal-items { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.ci { font-size: 11px; line-height: 1.25; padding: 3px 6px; border-radius: 6px; background: var(--surface-2); color: var(--fg-2); border-left: 3px solid var(--fg-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.ci:hover { color: var(--fg); background: var(--surface-3); }
+.ci.is-done { text-decoration: line-through; opacity: .6; }
+.ci-event, .cal-dot.ci-event { border-left-color: var(--accent); }
+.ci-task, .cal-dot.ci-task { border-left-color: var(--fg-2); }
+.ci-deadline, .cal-dot.ci-deadline { border-left-color: var(--bad); }
+.ci-shadow, .cal-dot.ci-shadow { border-left-color: var(--gold); }
+.ci-commit, .cal-dot.ci-commit { border-left-color: var(--c6); }
+.ci-health, .cal-dot.ci-health { border-left-color: var(--good); }
+.cal-dot { width: 10px; height: 10px; border-radius: 3px; border-left: 3px solid var(--fg-3); background: var(--surface-3); display: inline-block; flex-shrink: 0; margin-right: 4px; }
+.cal-row.ci-event .cal-dot { border-left-color: var(--accent); } .cal-row.ci-deadline .cal-dot { border-left-color: var(--bad); } .cal-row.ci-shadow .cal-dot { border-left-color: var(--gold); } .cal-row.ci-commit .cal-dot { border-left-color: var(--c6); } .cal-row.ci-health .cal-dot { border-left-color: var(--good); }
+.cal-week { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; }
+.cal-col { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 8px; min-height: 180px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.cal-col.is-today { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent-soft); }
+.cal-col-head { display: flex; align-items: baseline; gap: 6px; }
+.cal-col-head b { font-family: var(--font-num); font-size: 18px; }
+.cal-col-items { display: flex; flex-direction: column; gap: 4px; flex: 1; }
+.cal-col .ci { white-space: normal; }
+@media (max-width: 860px) {
+  .cal-cell { min-height: 64px; padding: 4px; border-radius: 8px; }
+  .cal-items .ci { display: none; }
+  .cal-items::after { content: ""; }
+  .cal-cell .cal-items { flex-direction: row; flex-wrap: wrap; gap: 3px; }
+  .cal-cell .cal-items .ci { display: block; width: 7px; height: 7px; padding: 0; border-radius: 50%; border: 0; background: var(--fg-3); font-size: 0; }
+  .cal-cell .cal-items .ci-event { background: var(--accent); } .cal-cell .cal-items .ci-deadline { background: var(--bad); } .cal-cell .cal-items .ci-shadow { background: var(--gold); } .cal-cell .cal-items .ci-commit { background: var(--c6); } .cal-cell .cal-items .ci-health { background: var(--good); }
+  .cal-week { grid-template-columns: 1fr; }
+  .cal-col { min-height: 0; flex-direction: row; align-items: flex-start; flex-wrap: wrap; }
+  .cal-col-head { min-width: 54px; flex-direction: column; gap: 0; }
+  .cal-col-items { min-width: 60%; }
+}
+
 /* ---------- Toasts ---------- */
 #toasts { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 8px; z-index: 200; pointer-events: none; }
 .toast { background: var(--fg); color: var(--bg); padding: 10px 16px; border-radius: 999px; font-size: 13px; font-weight: 600; box-shadow: 0 16px 40px -10px rgba(0,0,0,0.4); animation: toast-in .4s var(--spring); display: flex; align-items: center; gap: 8px; }

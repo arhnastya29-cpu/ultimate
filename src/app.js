@@ -9,6 +9,7 @@ import { afterPageRender, toggleEditMode } from './blocks.js';
 // render может вернуть функцию очистки. На любое изменение данных страница перерисовывается.
 export const PAGES = [
   { id: 'today',    group: 'Главное',   title: 'Сегодня',          short: 'Сегодня', icon: 'sun',      mod: () => import('./pages/today.js') },
+  { id: 'calendar', group: 'Главное',   title: 'Календарь',        short: 'Календ.', icon: 'calendar', mod: () => import('./pages/calendar.js') },
   { id: 'goals',    group: 'Главное',   title: 'Цели и задачи',    short: 'Цели', icon: 'target',   mod: () => import('./pages/goals.js') },
   { id: 'projects', group: 'Главное',   title: 'Проекты',          short: 'Проекты', icon: 'layers',   mod: () => import('./pages/projects.js') },
   { id: 'shadow',   group: 'Главное',   title: 'Shadow',           short: 'Shadow', icon: 'briefcase', mod: () => import('./pages/shadow.js') },
@@ -26,7 +27,7 @@ export const PAGES = [
   { id: 'settings', group: 'Ресурсы',   title: 'Настройки',        short: 'Настройки', icon: 'settings', mod: () => import('./pages/settings.js') },
 ];
 
-const MOBILE_TABS = 4; // первые N разделов — вкладки внизу экрана телефона, остальные в «Ещё»
+const MOBILE_TABS = 5; // первые N разделов — вкладки внизу экрана телефона, остальные в «Ещё»
 const sidebar = document.getElementById('sidebar');
 let pageRoot = document.getElementById('page');
 let current = null;      // { id, cleanup }

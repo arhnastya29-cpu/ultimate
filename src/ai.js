@@ -7,6 +7,7 @@
 
 import { db } from './db.js';
 import { today, addDays, fmtDate, lastNDays } from './ui.js';
+import { occursOn } from './pages/calendar.js';
 
 const API_URL = 'https://api.anthropic.com/v1/messages';
 const API_VERSION = '2026-10-21';
@@ -59,6 +60,11 @@ export function buildContext(pageId) {
   if (overdue.length) L.push('Просрочено:\n' + overdue.slice(0, 10).map(tline).join('\n'));
   if (inbox.length) L.push('Инбокс:\n' + inbox.slice(0, 10).map(tline).join('\n'));
   if (timeless.length) L.push('Бессрочные (без дедлайна):\n' + timeless.slice(0, 10).map(tline).join('\n'));
+
+  // Календарь: события на 7 дней
+  const evLines = [];
+  for (let i = 0; i < 7; i++) { const dd = addDays(t, i); for (const ev of db.all('events')) if (occursOn(ev, dd)) evLines.push(`- ${dd}${ev.time ? ` ${ev.time}` : ''}${ev.endTime ? `–${ev.endTime}` : ''}: ${cut(ev.title, 60)}${ev.place ? ` (${cut(ev.place, 30)})` : ''}`); }
+  if (evLines.length) L.push(`\n## Календарь (события на неделю)\n` + evLines.slice(0, 25).join('\n'));
 
   // Цели
   const goals = db.all('goals').filter(g => g.status === 'active');
@@ -178,6 +184,8 @@ const TOOLS = [
     input_schema: { type: 'object', properties: { personId: { type: 'string' }, text: { type: 'string' }, next: { type: 'string' }, kind: { type: 'string', enum: ['meeting', 'call', 'chat', 'other'] } }, required: ['personId', 'text'] } },
   { name: 'add_idea', description: 'Записать идею в копилку идей (раздел Заметки → Идеи).',
     input_schema: { type: 'object', properties: { title: { type: 'string' }, body: { type: 'string' }, impact: { type: 'integer', description: '1-3' }, effort: { type: 'integer', description: '1-3' } }, required: ['title'] } },
+  { name: 'add_event', description: 'Добавить событие в календарь: встреча, созвон, тренировка. Время в формате HH:MM, повтор: none|daily|weekdays|weekly|monthly.',
+    input_schema: { type: 'object', properties: { title: { type: 'string' }, date: { type: 'string', description: 'YYYY-MM-DD' }, time: { type: 'string' }, endTime: { type: 'string' }, place: { type: 'string' }, repeat: { type: 'string', enum: ['none', 'daily', 'weekdays', 'weekly', 'monthly'] } }, required: ['title', 'date'] } },
   { name: 'write_journal', description: 'Записать или дополнить дневник за сегодня. Передавайте только те поля, которые пользователь попросил записать.',
     input_schema: { type: 'object', properties: { highlight: { type: 'string' }, wentWell: { type: 'string' }, improve: { type: 'string' }, gratitude: { type: 'string' }, lessons: { type: 'string' }, mood: { type: 'integer', description: '1-5' } } } },
 ];
@@ -231,6 +239,10 @@ function runTool(name, input) {
       const rec = db.add('ideas', { title: String(input.title || '').trim(), body: input.body || '', status: 'new', impact: [1, 2, 3].includes(Number(input.impact)) ? Number(input.impact) : 2, effort: [1, 2, 3].includes(Number(input.effort)) ? Number(input.effort) : 2, tags: [], pinned: false });
       return `Идея записана: «${rec.title}».`;
     }
+    case 'add_event': {
+      const rec = db.add('events', { title: String(input.title || '').trim(), date: input.date || t, time: input.time || '', endTime: input.endTime || '', place: input.place || '', kind: 'meeting', repeat: input.repeat || 'none', until: '', notes: '' });
+      return `Событие добавлено: «${rec.title}» ${rec.date}${rec.time ? ` в ${rec.time}` : ''}${rec.repeat !== 'none' ? ' (с повтором)' : ''}.`;
+    }
     case 'write_journal': {
       const fields = ['highlight', 'wentWell', 'improve', 'gratitude', 'lessons'];
       const patch = {}; for (const f of fields) if (input[f]) patch[f] = String(input[f]);
@@ -246,7 +258,7 @@ function runTool(name, input) {
 // ---------- системный промпт ----------
 function systemPrompt(pageId) {
   const s = db.settings();
-  return `Ты — личный помощник в приложении ULTIMATE, персональной системе эффективности${s.name ? ` пользователя по имени ${s.name}` : ''}. Разделы приложения: Сегодня, Цели и задачи (с доской визуализации), Проекты (со стримами и задачами), Shadow (работа с CEO: его задачи, рекомендации, наблюдения), Люди (команда, партнёры, обязательства в обе стороны, журнал контактов), База знаний (разделы пользователя), Привычки, Рефлексия (дневник и недельные обзоры), Обучение, Книги, Здоровье, Тренировки, Питание, Сон, Финансы.
+  return `Ты — личный помощник в приложении ULTIMATE, персональной системе эффективности${s.name ? ` пользователя по имени ${s.name}` : ''}. Разделы приложения: Сегодня, Календарь (события, расписание, все даты), Цели и задачи (с доской визуализации), Проекты (со стримами и задачами), Shadow (работа с CEO: его задачи, рекомендации, наблюдения), Люди (команда, партнёры, обязательства в обе стороны, журнал контактов), База знаний (разделы пользователя), Привычки, Рефлексия (дневник и недельные обзоры), Обучение, Книги, Здоровье, Тренировки, Питание, Сон, Финансы.
 
 Ниже дана выжимка реальных данных пользователя на сегодня. Опирайся только на неё и на то, что пользователь пишет; ничего не выдумывай. Если данных не хватает — скажи, чего именно, и задай один точный вопрос.
 
@@ -254,7 +266,7 @@ function systemPrompt(pageId) {
 
 Для раздела Shadow: помогай готовиться к разговорам с CEO, опираясь на записанные рекомендации и наблюдения; формулируй, как лучше подать вопрос или результат именно этому человеку.
 
-Действия: у тебя есть инструменты для записи в приложение (добавить задачу, отметить выполненной, отметить привычку, записать в Shadow, в журнал проекта, в дневник, создать цель, записать обязательство или контакт с человеком, записать идею). Используй их, когда пользователь прямо просит что-то записать, добавить или отметить. После действия коротко подтверди, что сделано. Не создавай записи без явной просьбы.
+Действия: у тебя есть инструменты для записи в приложение (добавить задачу, отметить выполненной, отметить привычку, записать в Shadow, в журнал проекта, в дневник, создать цель, записать обязательство или контакт с человеком, записать идею, добавить событие в календарь). Используй их, когда пользователь прямо просит что-то записать, добавить или отметить. После действия коротко подтверди, что сделано. Не создавай записи без явной просьбы.
 
 Открыт раздел: ${pageId}.`;
 }
@@ -368,6 +380,7 @@ export async function testKey() {
 export function quickPrompts(pageId) {
   const map = {
     today: ['Собери план на сегодня', 'Что сейчас важнее всего?', 'Что я упускаю на этой неделе?'],
+    calendar: ['Что у меня на этой неделе?', 'Где в расписании окна для глубокой работы?', 'Что перенести, чтобы разгрузить неделю?'],
     goals: ['Где я буксую по целям?', 'Разбей главную цель на шаги', 'Какие цели конфликтуют между собой?'],
     projects: ['Какие риски по проектам?', 'Следующий шаг для каждого проекта', 'Что просрочено и что с этим делать?'],
     shadow: ['Как лучше зайти к CEO с вопросом?', 'Что я знаю о его стиле: сведи в 5 правил', 'Какие его задачи горят?'],

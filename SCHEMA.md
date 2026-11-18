@@ -44,6 +44,7 @@ export async function render(root, { params, navigate, page }) {
 | `kbSections` | разделы базы знаний пользователя: `name, icon (emoji), description, order` |
 | `kbPages` | страницы базы знаний: `sectionId, title, body (простая разметка: #, -, **, \`, [[Название]]), tags: string[], pinned` |
 | `ideas` | копилка идей (вкладка в «Заметках»): `title, body, status: 'new'\|'maybe'\|'inwork'\|'done'\|'dropped', impact 1-3, effort 1-3, tags: string[], pinned, projectId?` |
+| `events` | события календаря: `title, date, time 'HH:MM'?, endTime?, place, kind: 'meeting'\|'work'\|'personal'\|'health'\|'other', repeat: 'none'\|'daily'\|'weekdays'\|'weekly'\|'monthly', until (date)?, notes`; повторы считаются на лету (`occursOn` в calendar.js) |
 | `tasks` | `title, date (date|null = без даты/инбокс), priority: 1 (высокий)\|2\|3, goalId?, projectId?, streamId?, focusDate? (дата, когда задача в «фокусе дня» на главной, до 3 штук), timeless? (бессрочная: без даты, живёт в отдельном списке, не в инбоксе), done bool, doneAt?, notes, estimateMin?, recurring?: 'daily'\|'weekly'\|null` |
 | `checkins` | `date (уникальна), mood 1-5, energy 1-5, stress 1-5, confidence 1-5 (уверенность в себе), symptoms: string[], weight?, notes` |
 | `labTests` | `date, name, value (number), unit, refLow?, refHigh?, notes` |

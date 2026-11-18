@@ -2,6 +2,7 @@
 // строка привычек → быстрый чек-ин → только актуальные модули → вечерняя рефлексия.
 import { db } from '../db.js';
 import { composeBlocks, customizeButton, bindCustomize } from '../blocks.js';
+import { occursOn } from './calendar.js';
 import { esc, icon, today, addDays, fmtDate, fmtDateLong, fmtMinutes, fmtNum, fmtMoney, progressBar, checkBtn, on, toast, weekDays, lastNDays, sum, monthKey, plural, daysBetween, clamp } from '../ui.js';
 
 export const title = 'Сегодня';
@@ -57,11 +58,15 @@ export async function render(root, { navigate }) {
   for (const g of db.all('goals')) if (g.status === 'active' && g.deadline && g.deadline >= d) upcoming.push({ date: g.deadline, title: g.title, kind: 'дедлайн цели', page: 'goals' });
   for (const x of db.all('shadowTasks')) if (!x.done && x.deadline && x.deadline >= d) upcoming.push({ date: x.deadline, title: x.title, kind: 'задача от CEO', page: 'shadow' });
   for (const x of db.all('healthTodos')) if (!x.done && x.date && x.date >= d) upcoming.push({ date: x.date, title: x.title, kind: x.type === 'appointment' ? 'приём' : 'здоровье', page: 'health' });
+  // события календаря: сегодня (с временем) и ближайшие
+  const nowHM = `${String(new Date().getHours()).padStart(2, '0')}:${String(new Date().getMinutes()).padStart(2, '0')}`;
+  const eventsToday = db.all('events').filter(ev => occursOn(ev, d)).sort((a, b) => (a.time || '').localeCompare(b.time || ''));
+  for (let i = 0; i <= 14; i++) { const dd = addDays(d, i); for (const ev of db.all('events')) if (occursOn(ev, dd) && (i > 0 || (ev.time && ev.time >= nowHM))) upcoming.push({ date: dd, title: ev.title + (ev.time ? ` · ${ev.time}` : ''), kind: 'событие', page: 'calendar', params: { date: dd }, time: ev.time || '' }); }
   const personName = (id) => db.get('people', id)?.name || '';
   for (const c of db.all('commitments')) if (!c.done && c.due && c.due >= d) upcoming.push({ date: c.due, title: `${c.title} · ${personName(c.personId)}`, kind: c.direction === 'mine' ? 'я обещала' : 'мне обещали', page: 'people', params: { id: c.personId } });
   const commOpen = db.all('commitments').filter(c => !c.done);
   const commSoon = commOpen.filter(c => c.due && c.due <= addDays(d, 7)).sort((a, b) => a.due.localeCompare(b.due)).slice(0, 5);
-  upcoming.sort((a, b) => a.date.localeCompare(b.date));
+  upcoming.sort((a, b) => a.date.localeCompare(b.date) || (a.time || '').localeCompare(b.time || ''));
   const next = upcoming.slice(0, 2);
   const overdueAll = overdue.length + db.all('shadowTasks').filter(x => !x.done && x.deadline && x.deadline < d).length + db.all('projects').filter(p => p.status !== 'done' && p.deadline && p.deadline < d).length + commOpen.filter(c => c.due && c.due < d).length;
 
@@ -186,6 +191,10 @@ export async function render(root, { navigate }) {
             </div>`;
           }).join('')}</div>` : '<div class="muted small">Ближайших дедлайнов нет. Можно выдохнуть.</div>'}
         </div>` },
+    { id: 'schedule', title: 'Расписание на сегодня', col: 2, html: eventsToday.length ? `<div class="card">
+          <div class="section-title"><h2>${icon('clock')} Сегодня по часам</h2><button class="link" data-go="calendar">календарь</button></div>
+          <div class="list">${eventsToday.map(ev => `<div class="list-item" style="padding:7px 0;${ev.time && ev.time < nowHM && (!ev.endTime || ev.endTime < nowHM) ? 'opacity:.55' : ''}"><span class="mono tiny" style="min-width:44px">${esc(ev.time || '—')}</span><div class="main"><div class="title small">${esc(ev.title)}</div>${ev.place ? `<div class="sub">${esc(ev.place)}</div>` : ''}</div></div>`).join('')}</div>
+        </div>` : '' },
     { id: 'people', title: 'Обязательства', col: 2, html: commSoon.length ? `<div class="card">
           <div class="section-title"><h2>${icon('users')} Обязательства</h2><button class="link" data-go="people">все</button></div>
           <div class="list">${commSoon.map(c => `<div class="list-item" style="padding:7px 0"><div class="main"><div class="title small">${esc(c.title)}</div><div class="sub"><span class="pill ${c.direction === 'mine' ? 'accent' : 'gold'}">${c.direction === 'mine' ? 'я обещала' : 'мне обещали'}</span> ${esc(personName(c.personId))}</div></div><span class="tiny ${c.due < d ? 'bad' : 'muted'}">${esc(fmtDate(c.due))}</span></div>`).join('')}</div>
