@@ -332,7 +332,9 @@ svg[aria-hidden="true"] { width: 1em; height: 1em; vertical-align: -0.15em; flex
 .pgrid { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
 .pcard { border-left: 3px solid var(--pc); }
 .pcard.is-done { opacity: .72; }
-.pcard-title { font-weight: 600; font-size: 15.5px; cursor: pointer; letter-spacing: -0.01em; }
+.pcard-title { font-weight: 600; font-size: 15.5px; cursor: pointer; letter-spacing: -0.01em; color: var(--fg); display: flex; align-items: center; gap: 4px; }
+.pcard-title svg { width: 14px; height: 14px; color: var(--fg-3); }
+.stream.is-done { opacity: .7; }
 .pcard-title:hover { color: var(--accent); }
 .pcard-desc { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .pcard-next { background: var(--surface-2); border-radius: var(--radius-s); padding: 8px 10px; }

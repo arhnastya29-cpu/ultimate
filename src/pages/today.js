@@ -119,7 +119,7 @@ export async function render(root, { navigate }) {
           <div class="list">
             ${todayTasks.map(t => `<div class="list-item">
               ${checkBtn(false, `data-task="${t.id}"`)}
-              <div class="main"><div class="title">${esc(t.title)}</div><div class="sub">${[t.estimateMin ? fmtMinutes(t.estimateMin) : '', goalName(t.goalId)].filter(Boolean).map(esc).join(' · ')}</div></div>
+              <div class="main"><div class="title">${esc(t.title)}</div><div class="sub row wrap" style="gap:6px">${t.projectId && db.get('projects', t.projectId) ? `<span class="pill accent ellipsis" style="max-width:160px">${esc(db.get('projects', t.projectId).name)}</span>` : ''}${[t.estimateMin ? fmtMinutes(t.estimateMin) : '', goalName(t.goalId)].filter(Boolean).map(v => `<span>${esc(v)}</span>`).join('')}</div></div>
               ${prio(t.priority)}
             </div>`).join('')}
             ${doneToday.map(t => `<div class="list-item">

@@ -121,7 +121,7 @@ export async function render(root) {
   const adviceCount = notes.filter(n => n.type === 'advice').length;
   const noteCount = notes.length - adviceCount;
 
-  root.innerHTML = `
+  root.innerHTML = `<div>
     <div class="page-head">
       <div><div class="eyebrow">Работа с CEO</div><h1>Shadow</h1></div>
       <div class="actions">
@@ -156,19 +156,20 @@ export async function render(root) {
               ? 'Сюда идут его советы, правила и формулировки, которые стоит запомнить. Закрепляйте главные'
               : 'Сюда идут наблюдения: как он принимает решения, что ценит, как лучше заходить с вопросами', noteTab === 'advice' ? '💡' : '🧭')}</div>`}
       </div>
-    </div>`;
+    </div></div>`;
+  const view = root.firstElementChild;
 
-  on(root, 'click', '[data-action="new-task"]', () => openTaskModal(null));
-  on(root, 'click', '[data-action="new-note"]', (e, el) => openNoteModal(null, el.dataset.type));
-  on(root, 'click', '[data-action="edit-task"]', (e, el) => { const x = db.get('shadowTasks', el.dataset.id); if (x) openTaskModal(x); });
-  on(root, 'click', '[data-action="edit-note"]', (e, el) => { const n = db.get('shadowNotes', el.dataset.id); if (n) openNoteModal(n); });
-  on(root, 'click', '[data-action="toggle"]', (e, el) => {
+  on(view, 'click', '[data-action="new-task"]', () => openTaskModal(null));
+  on(view, 'click', '[data-action="new-note"]', (e, el) => openNoteModal(null, el.dataset.type));
+  on(view, 'click', '[data-action="edit-task"]', (e, el) => { const x = db.get('shadowTasks', el.dataset.id); if (x) openTaskModal(x); });
+  on(view, 'click', '[data-action="edit-note"]', (e, el) => { const n = db.get('shadowNotes', el.dataset.id); if (n) openNoteModal(n); });
+  on(view, 'click', '[data-action="toggle"]', (e, el) => {
     const x = db.get('shadowTasks', el.dataset.id); if (!x) return;
     db.update('shadowTasks', x.id, x.done ? { done: false, doneAt: null } : { done: true, doneAt: today() });
     if (!x.done) toast('Отмечено выполненным. Добавьте результат в карточке, если важно запомнить реакцию');
   });
-  on(root, 'click', '[data-action="toggle-done"]', () => { showDone = !showDone; render(root); });
-  on(root, 'click', '[data-action="note-tab"]', (e, el) => { noteTab = el.dataset.tab; render(root); });
-  const inp = root.querySelector('[data-search]');
-  inp.addEventListener('input', () => { search = inp.value; const pos = inp.selectionStart; render(root); const n = root.querySelector('[data-search]'); n.focus(); n.setSelectionRange(pos, pos); });
+  on(view, 'click', '[data-action="toggle-done"]', () => { showDone = !showDone; render(root); });
+  on(view, 'click', '[data-action="note-tab"]', (e, el) => { noteTab = el.dataset.tab; render(root); });
+  const inp = view.querySelector('[data-search]');
+  inp.addEventListener('input', () => { search = inp.value; const pos = inp.selectionStart; render(root); const n = view.querySelector('[data-search]'); n.focus(); n.setSelectionRange(pos, pos); });
 }

@@ -6,6 +6,7 @@ import {
 } from '../ui.js';
 
 import { renderVision, bindVision } from './vision.js';
+import { openTaskModal } from './task-modal.js';
 
 export const title = 'Цели и задачи';
 
@@ -15,6 +16,7 @@ let day = today();        // выбранный день во вкладке з�
 let horizon = 'all';      // фильтр целей: all | year | quarter | month
 let showDone = false;     // показывать завершённые цели
 let inboxOpen = false;    // раскрыт ли инбокс
+let projFilter = 'all';   // фильтр задач: all | with | without (с проектом / без)
 
 // ---------- Справочники ----------
 const AREAS = { career: 'Карьера', health: 'Здоровье', learning: 'Обучение', finance: 'Финансы', relations: 'Отношения', personal: 'Личное' };
@@ -82,40 +84,6 @@ function removeKR(goalId, krId) {
 }
 
 // ---------- Модалки ----------
-function openTaskModal(task, goals) {
-  const isNew = !task;
-  const x = task || { title: '', date: day, priority: 2, goalId: null, estimateMin: null, notes: '', recurring: null };
-  const goalOptions = goals
-    .filter(g => g.status !== 'done' || g.id === x.goalId)
-    .map(g => [g.id, g.title]);
-  modal({
-    title: isNew ? 'Новая задача' : 'Задача',
-    body: `<div class="form">
-      ${field({ name: 'title', label: 'Название', value: x.title, required: true, placeholder: 'Что нужно сделать' })}
-      ${formRow(
-        field({ name: 'date', label: 'Дата', type: 'date', value: x.date || '', hint: 'Пусто — в инбокс' }),
-        field({ name: 'priority', label: 'Приоритет', type: 'select', value: x.priority ?? 2, options: PRIORITY_OPTIONS }),
-        field({ name: 'estimateMin', label: 'Оценка, мин', type: 'number', value: x.estimateMin ?? '', min: 0, step: 5 }),
-      )}
-      ${formRow(
-        field({ name: 'goalId', label: 'Цель', type: 'select', value: x.goalId || '', options: [['', '— без цели —'], ...goalOptions] }),
-        field({ name: 'recurring', label: 'Повтор', type: 'select', value: x.recurring || '', options: [['', 'Нет'], ['daily', 'Ежедневно'], ['weekly', 'Еженедельно']] }),
-      )}
-      ${field({ name: 'notes', label: 'Заметки', type: 'textarea', value: x.notes || '', rows: 3 })}
-    </div>`,
-    onSubmit: (d) => {
-      const patch = {
-        title: d.title, date: d.date || null, priority: Number(d.priority) || 2,
-        goalId: d.goalId || null, estimateMin: d.estimateMin ?? null,
-        notes: d.notes || '', recurring: d.recurring || null,
-      };
-      if (isNew) { db.add('tasks', { ...patch, done: false, doneAt: null }); toast('Задача добавлена'); }
-      else { db.update('tasks', x.id, patch); toast('Задача сохранена'); }
-    },
-    onDelete: isNew ? undefined : () => { db.remove('tasks', x.id); toast('Задача удалена'); },
-  });
-}
-
 function openGoalModal(goal) {
   const isNew = !goal;
   const g = goal || { title: '', description: '', areaKey: 'personal', horizon: 'quarter', deadline: null, status: 'active', progress: 0, keyResults: [] };
@@ -177,8 +145,10 @@ function openWeeklyReviewModal(weekStart) {
 // ---------- Фрагменты разметки ----------
 function taskRow(x, goalById, { overdue = false, inbox = false } = {}) {
   const g = x.goalId ? goalById(x.goalId) : null;
+  const p = x.projectId ? db.get('projects', x.projectId) : null;
   const sub = [
     priPill(x.priority),
+    p ? `<a class="pill accent ellipsis" style="max-width:180px" href="#/projects?id=${esc(p.id)}" title="Открыть проект">${esc(p.name)}</a>` : '<span class="tag faint">без проекта</span>',
     g ? `<span class="tag ellipsis" style="max-width:160px">${esc(g.title)}</span>` : '',
     x.estimateMin ? `<span>${esc(fmtMinutes(x.estimateMin))}</span>` : '',
     x.recurring ? `<span title="Повторяется">↻ ${x.recurring === 'daily' ? 'ежедневно' : 'еженедельно'}</span>` : '',
@@ -211,6 +181,8 @@ function weeklyCard() {
 }
 
 function renderTasks(tasks, goalById, t) {
+  if (projFilter === 'with') tasks = tasks.filter(x => !!x.projectId);
+  else if (projFilter === 'without') tasks = tasks.filter(x => !x.projectId);
   const open = tasks.filter(x => !x.done);
   const dayTasks = sortBy(open.filter(x => x.date === day), x => x.priority || 2);
   const overdueAll = sortBy(open.filter(x => x.date && x.date < t), x => x.date);
@@ -222,7 +194,13 @@ function renderTasks(tasks, goalById, t) {
   const row = (x, o) => taskRow(x, goalById, o);
 
   return `
-    <div class="row between wrap" style="margin-bottom:14px">${dateNav(day)}</div>
+    <div class="row between wrap" style="margin-bottom:14px;gap:10px">${dateNav(day)}
+      <div class="seg">
+        <button type="button" class="${projFilter === 'all' ? 'active' : ''}" data-action="proj-filter" data-filter="all">Все</button>
+        <button type="button" class="${projFilter === 'with' ? 'active' : ''}" data-action="proj-filter" data-filter="with">С проектом</button>
+        <button type="button" class="${projFilter === 'without' ? 'active' : ''}" data-action="proj-filter" data-filter="without">Без проекта</button>
+      </div>
+    </div>
     <div class="grid-3" style="margin-bottom:12px">
       <div class="stat">
         <div class="label">Сделано</div>
@@ -374,10 +352,11 @@ export async function render(root, ctx) {
     const a = b.dataset.action, id = b.dataset.id;
     switch (a) {
       case 'tab': tab = b.dataset.tab; rerender(); break;
-      case 'new-task': openTaskModal(null, goals); break;
+      case 'new-task': openTaskModal(null, { defaults: { date: day } }); break;
+      case 'proj-filter': projFilter = b.dataset.filter; rerender(); break;
       case 'new-goal': openGoalModal(null); break;
       case 'toggle': toggleTask(id); break;
-      case 'edit': { const x = db.get('tasks', id); if (x) openTaskModal(x, goals); break; }
+      case 'edit': { const x = db.get('tasks', id); if (x) openTaskModal(x); break; }
       case 'move-today': db.update('tasks', id, { date: today() }); break;
       case 'schedule': db.update('tasks', id, { date: day }); break;
       case 'move-all': {

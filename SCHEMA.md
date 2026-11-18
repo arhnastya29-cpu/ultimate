@@ -37,7 +37,8 @@ export async function render(root, { params, navigate, page }) {
 | `visionItems` | доска «Визуализация» (вкладка на странице целей): `type: 'image'\|'text', src (data URL JPEG, сжато до 1400px), w, h, caption, area?, order` |
 | `shadowTasks` | задачи от CEO: `title, context, deadline (date|null), priority 1\|2\|3, done, doneAt?, result, receivedAt` |
 | `shadowNotes` | `type: 'advice'\|'note', title, body, date, tags: string[], pinned` |
-| `tasks` | `title, date (date|null = без даты/инбокс), priority: 1 (высокий)\|2\|3, goalId?, done bool, doneAt?, notes, estimateMin?, recurring?: 'daily'\|'weekly'\|null` |
+| `streams` | направления внутри проекта: `projectId, name, description, status: 'active'\|'paused'\|'done', order` |
+| `tasks` | `title, date (date|null = без даты/инбокс), priority: 1 (высокий)\|2\|3, goalId?, projectId?, streamId?, done bool, doneAt?, notes, estimateMin?, recurring?: 'daily'\|'weekly'\|null` |
 | `checkins` | `date (уникальна), mood 1-5, energy 1-5, stress 1-5, symptoms: string[], weight?, notes` |
 | `labTests` | `date, name, value (number), unit, refLow?, refHigh?, notes` |
 | `healthTodos` | `title, date?, type: 'appointment'\|'test'\|'other', done bool, notes` |
@@ -60,6 +61,8 @@ export async function render(root, { params, navigate, page }) {
 | `weeklyReviews` | `weekStart (date пн), wins, challenges, nextFocus, rating 1-5` |
 
 Настройки: `db.settings()` → `{ name, theme, visionStatement, kcalTarget, proteinTarget, fatTarget, carbsTarget, waterTarget, sleepTarget, stepsTarget, currency, learningWeeklyMinutes }`.
+
+Общая форма задачи — `src/pages/task-modal.js` (`openTaskModal(task, { defaults, lockProject })`), используется в целях и внутри проекта. Страница проекта: `#/projects?id=<id>` (стримы, задачи по стримам, журнал).
 
 ## Синхронизация (`src/sync.js`)
 
