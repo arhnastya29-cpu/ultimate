@@ -1,6 +1,7 @@
 import { db, DEFAULT_SETTINGS, COLLECTIONS } from '../db.js';
-import { esc, icon, field, formRow, formData, toast, on, fmtNum } from '../ui.js';
+import { esc, icon, field, formRow, formData, toast, on, fmtNum, modal, fmtDate } from '../ui.js';
 import { canInstall, promptInstall, isStandalone, onInstallChange } from '../pwa.js';
+import { status as syncStatus, onChange as onSyncChange, enable as syncEnable, disable as syncDisable, syncNow } from '../sync.js';
 
 export const title = 'Настройки';
 
@@ -12,6 +13,65 @@ function installBlock() {
   return ios
     ? `<p class="muted small">На iPhone: нажмите кнопку «Поделиться» в Safari, затем «На экран Домой». Иконка ULTIMATE появится рядом с другими приложениями.</p>`
     : `<p class="muted small">В Chrome или Edge: иконка установки в адресной строке, либо меню браузера → «Установить ULTIMATE». В Safari на Mac: Файл → «Добавить в Dock».</p>`;
+}
+
+function fmtWhen(isoStr) {
+  if (!isoStr) return 'ещё не было';
+  const d = new Date(isoStr); const diff = Date.now() - d.getTime();
+  if (diff < 60000) return 'только что';
+  if (diff < 3600000) return `${Math.round(diff / 60000)} мин назад`;
+  return `${fmtDate(isoStr.slice(0, 10))} в ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+function syncBlock() {
+  const st = syncStatus();
+  if (!st.enabled) {
+    return `<p class="muted small" style="margin-bottom:12px">Чтобы записи были одинаковыми на телефоне и компьютере, включите синхронизацию и задайте пароль. Данные шифруются этим паролем ещё на устройстве, в облаке лежит только нечитаемый набор символов.</p>
+      <button class="btn" data-sync-enable>${icon('upload')} Включить синхронизацию</button>`;
+  }
+  return `<div class="stack tight" style="margin-bottom:12px">
+      <div class="row" style="gap:8px"><span class="pill ${st.lastError ? 'bad' : 'good'}">${st.busy ? 'синхронизация…' : st.lastError ? 'ошибка' : 'включена'}</span><span class="small muted">последняя: ${esc(fmtWhen(st.lastSync))}</span></div>
+      ${st.lastError ? `<div class="small bad">${esc(st.lastError)}</div>` : ''}
+      <p class="muted tiny">На другом устройстве откройте этот же раздел и введите тот же пароль. Синхронизация идёт автоматически после каждого изменения и при открытии приложения.</p>
+    </div>
+    <div class="row wrap">
+      <button class="btn secondary" data-sync-now ${st.busy ? 'disabled' : ''}>${icon('repeat')} Синхронизировать сейчас</button>
+      <button class="btn ghost" data-sync-disable>Выключить</button>
+    </div>`;
+}
+
+function openSyncModal() {
+  modal({
+    title: 'Пароль синхронизации',
+    submitText: 'Включить',
+    body: `<div class="form">
+      <p class="small muted">Придумайте пароль. Его нужно будет ввести один раз на каждом устройстве. Если забыть пароль, облачную копию прочитать будет нельзя, поэтому запишите его в надёжном месте.</p>
+      ${field({ name: 'password', label: 'Пароль', type: 'password', required: true, placeholder: 'не короче 8 символов', autofocus: true })}
+      ${field({ name: 'password2', label: 'Ещё раз', type: 'password', required: true, placeholder: 'повторите пароль' })}
+      <div class="tiny faint" data-sync-progress></div>
+    </div>`,
+    onSubmit: (d, form) => {
+      if (d.password.length < 8) { alert('Пароль должен быть не короче 8 символов'); return false; }
+      if (d.password !== d.password2) { alert('Пароли не совпадают'); return false; }
+      const btn = form.querySelector('[data-submit]'); const prog = form.querySelector('[data-sync-progress]');
+      btn.disabled = true; prog.textContent = 'Готовим ключ и подключаемся к облаку…';
+      syncEnable(d.password).then((r) => {
+        form.closest('.modal-backdrop')?.remove();
+        const localCount = COLLECTIONS.reduce((n, c) => n + db.all(c).length, 0);
+        if (r?.created && localCount < 3) {
+          alert('В облаке пока нет данных с таким паролем — создано новое хранилище. Если вы уже включали синхронизацию на другом устройстве, скорее всего пароль введён иначе: выключите синхронизацию и попробуйте ещё раз.');
+        } else if (r?.created) {
+          toast('Синхронизация включена, данные отправлены в облако');
+        } else {
+          toast(r?.changedLocal ? 'Синхронизация включена, данные объединены' : 'Синхронизация включена');
+        }
+      }).catch((e) => {
+        btn.disabled = false; prog.textContent = '';
+        alert(e.message || String(e));
+      });
+      return false;
+    },
+  });
 }
 
 export async function render(root) {
@@ -55,6 +115,10 @@ export async function render(root) {
           </div>
           <label class="row tiny muted" style="margin-top:10px;gap:6px"><input type="checkbox" id="mergeImport"> При импорте объединять с текущими данными, а не заменять</label>
         </div>
+        <div class="card" id="syncCard">
+          <h3>Синхронизация между устройствами</h3>
+          ${syncBlock()}
+        </div>
         <div class="card" id="installCard">
           <h3>Приложение на телефоне</h3>
           ${installBlock()}
@@ -81,6 +145,14 @@ export async function render(root) {
     for (const k of Object.keys(d)) if (d[k] == null && typeof DEFAULT_SETTINGS[k] === 'number') d[k] = DEFAULT_SETTINGS[k];
     db.setSettings(d);
     toast('Настройки сохранены');
+  });
+
+  on(root, 'click', '[data-sync-enable]', () => openSyncModal());
+  on(root, 'click', '[data-sync-now]', async () => { const r = await syncNow(); toast(r.ok ? (r.changedLocal ? 'Получены изменения с другого устройства' : 'Всё синхронизировано') : (r.reason === 'busy' ? 'Уже идёт' : 'Не удалось: ' + r.reason)); });
+  on(root, 'click', '[data-sync-disable]', () => { if (confirm('Выключить синхронизацию на этом устройстве? Данные останутся и здесь, и в облаке.')) { syncDisable(); toast('Синхронизация выключена'); } });
+  const offSync = onSyncChange(() => {
+    const c = root.querySelector('#syncCard');
+    if (c) c.innerHTML = `<h3>Синхронизация между устройствами</h3>${syncBlock()}`;
   });
 
   on(root, 'click', '[data-install]', async () => { await promptInstall(); });
@@ -118,5 +190,5 @@ export async function render(root) {
     await db.clearAll();
     toast('Все данные удалены');
   });
-  return () => offInstall();
+  return () => { offInstall(); offSync(); };
 }

@@ -1,6 +1,7 @@
 import { db } from './db.js';
 import { esc, icon, toast, el } from './ui.js';
 import { afterRender, watchCelebrations, openCommandPalette } from './fx.js';
+import { initSync } from './sync.js';
 
 // Реестр страниц. Каждая страница — модуль, экспортирующий { title, render(root) }.
 // render может вернуть функцию очистки. На любое изменение данных страница перерисовывается.
@@ -177,6 +178,7 @@ document.addEventListener('keydown', (e) => {
   applyTheme();
   await renderPage(true);
   watchCelebrations();
+  initSync();
   // Напоминание о бэкапе раз в неделю.
   const last = localStorage.getItem('lifeos_lastExport');
   if (last && Date.now() - Number(last) > 7 * 86400000) toast('Прошла неделя с последнего бэкапа — экспортируйте данные в Настройках');

@@ -57,3 +57,7 @@ export async function render(root, { params, navigate, page }) {
 | `weeklyReviews` | `weekStart (date пн), wins, challenges, nextFocus, rating 1-5` |
 
 Настройки: `db.settings()` → `{ name, theme, kcalTarget, proteinTarget, fatTarget, carbsTarget, waterTarget, sleepTarget, stepsTarget, currency, learningWeeklyMinutes }`.
+
+## Синхронизация (`src/sync.js`)
+
+Из пароля (PBKDF2) выводятся id «полки» и ключ AES-GCM; `db.snapshot()` сжимается, шифруется и хранится одной строкой в таблице `vaults` Supabase (`id, blob, version, updated_at`). Слияние по записям: побеждает большее `updatedAt`, удаления через `db.tombstones` (`{col: {id: isoDate}}`, пишутся в `db.remove`). Запись в облако защищена проверкой `version`. Настройки устройства — в `localStorage['ultimate_sync']` (id полки и ключ в JWK, пароль не хранится). Публичный ключ Supabase в коде не секретный.

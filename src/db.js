@@ -97,6 +97,7 @@ class Store {
   constructor() {
     this.data = {};
     this._settings = { ...DEFAULT_SETTINGS };
+    this.tombstones = {};   // { col: { id: isoDate } } — удалённые записи, нужны для синхронизации
     this.subs = new Set();
     this.idb = null;
     this._pending = new Map();
@@ -112,6 +113,7 @@ class Store {
       try { raw = JSON.parse(localStorage.getItem('lifeos') || '{}'); } catch { raw = {}; }
     }
     for (const c of COLLECTIONS) if (Array.isArray(raw[c])) this.data[c] = raw[c];
+    if (raw.tombstones && typeof raw.tombstones === 'object') this.tombstones = raw.tombstones;
     if (raw.settings && typeof raw.settings === 'object') this._settings = { ...DEFAULT_SETTINGS, ...raw.settings };
     // Однократная миграция на Deep Space: старые настройки могли хранить светлую/авто тему.
     if ((raw.settings || {}).themeV !== DEFAULT_SETTINGS.themeV) {
@@ -126,7 +128,7 @@ class Store {
     if (this._pending.has(key)) clearTimeout(this._pending.get(key));
     this._pending.set(key, setTimeout(() => {
       this._pending.delete(key);
-      const value = key === 'settings' ? this._settings : this.data[key];
+      const value = key === 'settings' ? this._settings : key === 'tombstones' ? this.tombstones : this.data[key];
       if (this.idb) idbPut(this.idb, key, value);
       else {
         try {
@@ -148,7 +150,8 @@ class Store {
 
   add(col, obj) {
     this._check(col);
-    const rec = { id: uid(), createdAt: new Date().toISOString(), ...obj };
+    const now = new Date().toISOString();
+    const rec = { id: uid(), createdAt: now, updatedAt: now, ...obj };
     this.data[col] = [...this.data[col], rec];
     this._persist(col); this._emit(col);
     return rec;
@@ -176,14 +179,34 @@ class Store {
     this._check(col);
     const before = this.data[col].length;
     this.data[col] = this.data[col].filter(r => r.id !== id);
-    if (this.data[col].length !== before) { this._persist(col); this._emit(col); }
+    if (this.data[col].length !== before) {
+      (this.tombstones[col] ||= {})[id] = new Date().toISOString();
+      this._persist(col); this._persist('tombstones'); this._emit(col);
+    }
   }
 
   settings() { return this._settings; }
   setSettings(patch) {
-    this._settings = { ...this._settings, ...patch };
+    this._settings = { ...this._settings, ...patch, updatedAt: new Date().toISOString() };
     this._persist('settings'); this._emit('settings');
     return this._settings;
+  }
+
+  // Снимок всего состояния для синхронизации и применение слитого состояния (без изменения меток времени).
+  snapshot() {
+    const collections = {};
+    for (const c of COLLECTIONS) collections[c] = this.data[c];
+    return { v: 1, settings: this._settings, tombstones: this.tombstones, collections };
+  }
+
+  applyMerged(state) {
+    for (const c of COLLECTIONS) {
+      const next = Array.isArray(state.collections?.[c]) ? state.collections[c] : this.data[c];
+      if (next !== this.data[c]) { this.data[c] = next; this._persist(c); }
+    }
+    if (state.tombstones) { this.tombstones = state.tombstones; this._persist('tombstones'); }
+    if (state.settings) { this._settings = { ...DEFAULT_SETTINGS, ...state.settings }; this._persist('settings'); }
+    this._emit('*');
   }
 
   exportJSON() {
@@ -210,6 +233,7 @@ class Store {
   async clearAll() {
     for (const c of COLLECTIONS) this.data[c] = [];
     this._settings = { ...DEFAULT_SETTINGS };
+    this.tombstones = {};
     if (this.idb) await idbClear(this.idb); else localStorage.removeItem('lifeos');
     this._emit('*');
   }
