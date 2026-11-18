@@ -3,6 +3,7 @@ import { esc, icon, toast, el } from './ui.js';
 import { afterRender, watchCelebrations, openCommandPalette } from './fx.js';
 import { initSync } from './sync.js';
 import { initAiPanel, setAiPage } from './ai-panel.js';
+import { applyLayout, openAutoCustomize } from './blocks.js';
 
 // Реестр страниц. Каждая страница — модуль, экспортирующий { title, render(root) }.
 // render может вернуть функцию очистки. На любое изменение данных страница перерисовывается.
@@ -139,10 +140,24 @@ async function renderPage(force = false) {
     pageRoot.innerHTML = `<div class="card"><h3>Ошибка на странице «${esc(page.title)}»</h3><pre class="mono tiny" style="white-space:pre-wrap">${esc(e.stack || e.message)}</pre></div>`;
   }
   current = { id: page.id, cleanup };
+  // Модульность: страницы без composeBlocks получают порядок/видимость блоков автоматически,
+  // в том числе при внутренних перерисовках (страница сама заменяет root.innerHTML).
+  if (!pageRoot.querySelector('.blocks[data-page]')) {
+    applyLayout(pageRoot, page.id);
+    const obs = new MutationObserver(() => { if (!pageRoot.querySelector('.blocks[data-page]')) applyLayout(pageRoot, page.id); });
+    obs.observe(pageRoot, { childList: true });
+    const prevCleanup = cleanup;
+    cleanup = () => { obs.disconnect(); if (typeof prevCleanup === 'function') prevCleanup(); };
+    current.cleanup = cleanup;
+  }
   if (!changed) window.scrollTo(0, scrollY);
   else window.scrollTo(0, 0);
   afterRender(pageRoot, { changed });
 }
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-customize]');
+  if (b && !b.closest('.blocks[data-page]') && !document.querySelector('#page .blocks[data-page]')) openAutoCustomize(b.dataset.customize);
+});
 
 function applyTheme() {
   const t = db.settings().theme || 'auto';

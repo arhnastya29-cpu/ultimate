@@ -60,9 +60,13 @@ export async function render(root, { params, navigate, page }) {
 | `journal` | `date (уникальна), wentWell, improve, gratitude, lessons, highlight, mood 1-5` |
 | `weeklyReviews` | `weekStart (date пн), wins, challenges, nextFocus, rating 1-5` |
 
-Настройки: `db.settings()` → `{ name, theme, visionStatement, notesV (версия миграции заметок), kcalTarget, proteinTarget, fatTarget, carbsTarget, waterTarget, sleepTarget, stepsTarget, currency, learningWeeklyMinutes }`.
+Настройки: `db.settings()` → `{ name, theme, visionStatement, notesV (версия миграции заметок), layouts (раскладки страниц), kcalTarget, proteinTarget, fatTarget, carbsTarget, waterTarget, sleepTarget, stepsTarget, currency, learningWeeklyMinutes }`.
 
 Общая форма задачи — `src/pages/task-modal.js` (`openTaskModal(task, { defaults, lockProject })`), используется в целях и внутри проекта. Страница проекта: `#/projects?id=<id>` (стримы, задачи по стримам, журнал).
+
+## Модульные страницы (`src/blocks.js`)
+
+Два механизма. (1) Явные блоки: страница строит массив `{ id, title, col, html }` и вызывает `composeBlocks(pageId, blocks)` + `bindCustomize(view, pageId, blocks)` (так сделана «Сегодня»). (2) Автоматические блоки: `app.js` после каждого рендера вызывает `applyLayout(root, pageId)`, который находит блоки (элементы с `data-block="id" data-block-title="…"` или карточки с заголовком секции, или ряды `.stat`) и применяет сохранённые порядок, колонку (`.grid-2 > .stack`) и видимость; кнопка «Настроить страницу» добавляется в `.page-head .actions`. Настройки — `settings.layouts[pageId] = { order, col, hidden }`, синхронизируются. Перестановка стрелками работает внутри одного контейнера; перенос между колонками — отдельными кнопками. Новые секции на странице: оберните в `data-block` с устойчивым id, иначе id выводится из текста заголовка.
 
 ## Синхронизация (`src/sync.js`)
 

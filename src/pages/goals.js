@@ -218,7 +218,7 @@ function renderTasks(tasks, goalById, t) {
         <div class="sub">${overdueAll.length ? 'ждут переноса' : 'всё в срок'}</div>
       </div>
     </div>
-    <form class="card row wrap" data-quick style="gap:8px;margin-bottom:12px">
+    <form class="card row wrap" data-quick data-block="quick" data-block-title="Быстрое добавление" style="gap:8px;margin-bottom:12px">
       <input class="input grow" name="title" placeholder="Новая задача на ${esc(fmtDate(day).toLowerCase())}…" required autocomplete="off" style="min-width:180px">
       <select class="input" name="priority" style="width:auto">
         <option value="2">Обычная</option><option value="1">Важная</option><option value="3">Низкая</option>
@@ -237,7 +237,7 @@ function renderTasks(tasks, goalById, t) {
         </div>` : ''}
       </div>
       <div class="stack">
-        <div class="card">
+        <div class="card" data-block="inbox" data-block-title="Инбокс">
           <details class="acc" data-inbox ${inboxOpen ? 'open' : ''}>
             <summary>Без даты / инбокс <span class="pill">${inbox.length}</span></summary>
             <div style="margin-top:8px">

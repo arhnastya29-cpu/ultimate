@@ -254,7 +254,7 @@ function renderDetail(root, p, navigate) {
       </div>
     </div>
     <div class="grid-2" style="align-items:start;margin-bottom:14px">
-      <div class="card stack tight" style="border-left:3px solid ${esc(p.color || 'var(--c1)')}">
+      <div class="card stack tight" data-block="info" data-block-title="О проекте" style="border-left:3px solid ${esc(p.color || 'var(--c1)')}">
         ${p.description ? `<div class="small">${esc(p.description)}</div>` : '<div class="small faint">Описание не заполнено</div>'}
         <div class="row" style="gap:8px;margin-top:4px">${progressBar(pct, 100, `grow ${isDone ? 'good' : ''}`)}<span class="tiny bold mono" style="min-width:36px;text-align:right">${pct}%</span></div>
         <div class="tiny muted row wrap" style="gap:10px">
@@ -266,13 +266,13 @@ function renderDetail(root, p, navigate) {
         ${p.nextStep && !isDone ? `<div class="pcard-next"><span class="tiny faint">Следующий шаг</span><div class="small">${icon('zap')} ${esc(p.nextStep)}</div></div>` : ''}
         ${(p.tags || []).length ? `<div class="row wrap" style="gap:5px">${p.tags.map(tg => `<span class="tag">${esc(tg)}</span>`).join('')}</div>` : ''}
       </div>
-      <div class="card stack tight">
+      <div class="card stack tight" data-block="notes" data-block-title="Заметки">
         <div class="row between"><h3 style="margin:0">Заметки</h3><button type="button" class="link" data-action="edit" data-id="${esc(p.id)}">Изменить</button></div>
         ${p.notes ? `<div class="pnotes small muted" style="max-height:180px;overflow:auto">${esc(p.notes)}</div>` : '<div class="tiny faint">Контакты, договорённости, решения — всё, что нужно держать под рукой</div>'}
       </div>
     </div>
 
-    <div class="section-title"><h2>Стримы</h2><div class="row" style="gap:10px"><span class="tiny muted">${streams.length ? `${streams.length} · задач ${tasks.length}` : ''}</span><button type="button" class="link" data-action="toggle-done">${showDone ? 'Скрыть выполненные' : `Показать выполненные (${doneCount})`}</button></div></div>
+    <div data-block="streams" data-block-title="Стримы и задачи"><div class="section-title"><h2>Стримы</h2><div class="row" style="gap:10px"><span class="tiny muted">${streams.length ? `${streams.length} · задач ${tasks.length}` : ''}</span><button type="button" class="link" data-action="toggle-done">${showDone ? 'Скрыть выполненные' : `Показать выполненные (${doneCount})`}</button></div></div>
     ${streams.length || loose.length ? `<div class="grid-auto pgrid">
         ${streams.map(st => streamCard(st, tasks, t, showDone)).join('')}
         ${loose.length ? `<div class="card stack tight stream">
@@ -281,14 +281,14 @@ function renderDetail(root, p, navigate) {
           ${showDone && looseDone.length ? `<div class="list" style="opacity:.7">${looseDone.map(x => projectTaskRow(x, t)).join('')}</div>` : ''}
         </div>` : ''}
       </div>`
-      : `<div class="card">${emptyState('Разбейте проект на стримы — направления работы, например «Маркетинг», «Разработка», «Договор». Внутри каждого живут свои задачи', '🧩')}</div>`}
+      : `<div class="card">${emptyState('Разбейте проект на стримы — направления работы, например «Маркетинг», «Разработка», «Договор». Внутри каждого живут свои задачи', '🧩')}</div>`}</div>
 
-    <div class="section-title" style="margin-top:22px"><h2>Журнал</h2><button type="button" class="link" data-action="log" data-id="${esc(p.id)}">+ запись</button></div>
+    <div data-block="log" data-block-title="Журнал"><div class="section-title" style="margin-top:22px"><h2>Журнал</h2><button type="button" class="link" data-action="log" data-id="${esc(p.id)}">+ запись</button></div>
     <div class="card">
       ${log.length ? `<div class="plog" style="border:0;padding:0">${log.map(e => `<div class="plog-item"><span class="plog-date mono">${esc(fmtDate(e.date))}</span><span class="plog-text">${esc(e.text)}</span>
         <button type="button" class="icon-btn sm plog-del" data-action="del-log" data-id="${esc(p.id)}" data-log="${esc(e.id)}" aria-label="Удалить запись">${icon('x')}</button></div>`).join('')}</div>`
       : emptyState('Записывайте, что произошло: созвоны, решения, проблемы. Так проект помнит свою историю', '📓')}
-    </div></div>`;
+    </div></div></div>`;
   const view = root.firstElementChild;
 
   on(view, 'click', '[data-action="edit"]', (e, el) => { const x = db.get('projects', el.dataset.id); if (x) openProjectModal(x); });
@@ -339,12 +339,12 @@ export async function render(root, { params = {}, navigate } = {}) {
       <div class="stat"><span class="label">${icon('calendar')} Дедлайны</span><span class="value ${soon.some(p => daysBetween(t, p.deadline) < 0) ? 'bad' : ''}">${soon.length}</span><span class="sub">в ближайшие 2 недели</span></div>
       <div class="stat"><span class="label">${icon('check')} Завершено</span><span class="value">${doneCount}</span><span class="sub">за всё время</span></div>
     </div>
-    <div class="chips" style="margin-bottom:14px">${FILTERS.map(([k, l]) => `<button class="chip ${filter === k ? 'active' : ''}" data-filter="${k}">${esc(l)}</button>`).join('')}</div>
-    ${list.length
+    <div class="chips" data-block="filters" data-block-title="Фильтры" style="margin-bottom:14px">${FILTERS.map(([k, l]) => `<button class="chip ${filter === k ? 'active' : ''}" data-filter="${k}">${esc(l)}</button>`).join('')}</div>
+    <div data-block="list" data-block-title="Список проектов">${list.length
       ? `<div class="grid-auto pgrid">${list.map(p => projectCard(p, t)).join('')}</div>`
       : all.length
         ? `<div class="card">${emptyState('В этом фильтре проектов нет', '🗂')}</div>`
-        : `<div class="card">${emptyState('Добавьте первый проект: название, суть и следующий шаг. Журнал внутри карточки поможет помнить, что и когда происходило', '🚀')}</div>`}
+        : `<div class="card">${emptyState('Добавьте первый проект: название, суть и следующий шаг. Журнал внутри карточки поможет помнить, что и когда происходило', '🚀')}</div>`}</div>
   </div>`;
   const view = root.firstElementChild;
 

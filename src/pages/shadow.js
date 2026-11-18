@@ -142,7 +142,7 @@ export async function render(root) {
         ${open.length ? `<div class="list">${open.map(x => taskRow(x, t)).join('')}</div>` : emptyState('Пока нет открытых задач. Записывайте сразу после разговора, пока формулировка свежая', '📝')}
         ${showDone && done.length ? `<div class="divider" style="margin:12px 0"></div><div class="label caps" style="margin-bottom:6px">Выполненные</div><div class="list">${done.map(x => taskRow(x, t)).join('')}</div>` : ''}
       </div>
-      <div class="stack">
+      <div class="stack" data-block="notes" data-block-title="Рекомендации и заметки">
         <div class="row between wrap" style="gap:8px">
           <div class="seg">
             <button type="button" class="${noteTab === 'advice' ? 'active' : ''}" data-action="note-tab" data-tab="advice">Рекомендации</button>

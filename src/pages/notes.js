@@ -189,7 +189,7 @@ export async function render(root) {
       <div class="stat"><span class="label">${icon('library')} Источников</span><span class="value">${sources.size}</span><span class="sub">${counts.book ? `книг: ${counts.book}` : ''}${counts.article ? ` · статей: ${counts.article}` : ''}${counts.podcast ? ` · подкастов: ${counts.podcast}` : ''}</span></div>
       <div class="stat"><span class="label">${icon('star')} Тегов</span><span class="value">${allTags.length}</span><span class="sub">${allTags.slice(0, 3).map(([t]) => '#' + esc(t)).join(' ') || 'добавьте теги к заметкам'}</span></div>
     </div>
-    <div class="card" style="margin-bottom:12px;padding:10px 12px">
+    <div class="card" data-block="search" data-block-title="Поиск и вид" style="margin-bottom:12px;padding:10px 12px">
       <div class="row wrap" style="gap:8px">
         <span class="muted" style="display:grid;place-items:center">${icon('search')}</span>
         <input type="search" class="input grow" data-search placeholder="Поиск по тексту, источнику и тегам…" value="${esc(query)}" style="border:0;background:transparent;padding:6px 4px;min-width:160px">
@@ -204,15 +204,15 @@ export async function render(root) {
         </select>
       </div>
     </div>
-    <div class="chips" style="margin-bottom:8px">
+    <div class="chips" data-block="types" data-block-title="Фильтр по источникам" style="margin-bottom:8px">
       <button class="chip ${typeFilter === 'all' ? 'active' : ''}" data-action="type" data-type="all">Все · ${notes.length}</button>
       ${Object.entries(SOURCE_TYPES).filter(([k]) => counts[k]).map(([k, [l, ic]]) => `<button class="chip ${typeFilter === k ? 'active' : ''}" data-action="type" data-type="${k}">${icon(ic)} ${esc(l)} · ${counts[k]}</button>`).join('')}
     </div>
-    ${allTags.length ? `<div class="chips ntags" style="margin-bottom:14px">
+    ${allTags.length ? `<div class="chips ntags" data-block="tags" data-block-title="Теги" style="margin-bottom:14px">
       <button class="chip ${!tagFilter ? 'active' : ''}" data-action="tag" data-tag="">Все теги</button>
       ${allTags.map(([t, c]) => `<button class="chip ${tagFilter === t ? 'active' : ''}" data-action="tag" data-tag="${esc(t)}">#${esc(t)} <span class="faint">${c}</span></button>`).join('')}
     </div>` : ''}
-    ${bodyHtml}
+    <div data-block="list" data-block-title="Список заметок">${bodyHtml}</div>
   </div>`;
   const page = root.firstElementChild;
 
