@@ -33,6 +33,7 @@ export async function render(root, { params, navigate, page }) {
 | `studySessions` | `areaId, itemId?, date, minutes, notes` |
 | `flashcards` | `areaId, front, back, example, due (date), interval (дни), ease (2.5), reps, lapses` |
 | `goals` | `title, description, areaKey: 'career'\|'health'\|'learning'\|'finance'\|'relations'\|'personal', horizon: 'year'\|'quarter'\|'month', deadline (date|null), status: 'active'\|'done'\|'paused', keyResults: [{id,title,done}], progress 0-100 (если нет KR — ручной)` |
+| `projects` | `name, description, status: 'idea'\|'active'\|'paused'\|'done', priority 1\|2\|3, deadline (date|null), progress 0-100, nextStep, link, tags: string[], notes, color, startedAt, finishedAt?, log: [{id, date, text}] (журнал событий, новые сверху)` |
 | `tasks` | `title, date (date|null = без даты/инбокс), priority: 1 (высокий)\|2\|3, goalId?, done bool, doneAt?, notes, estimateMin?, recurring?: 'daily'\|'weekly'\|null` |
 | `checkins` | `date (уникальна), mood 1-5, energy 1-5, stress 1-5, symptoms: string[], weight?, notes` |
 | `labTests` | `date, name, value (number), unit, refLow?, refHigh?, notes` |

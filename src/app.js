@@ -7,6 +7,7 @@ import { afterRender, watchCelebrations, openCommandPalette } from './fx.js';
 export const PAGES = [
   { id: 'today',    group: 'Главное',   title: 'Сегодня',          short: 'Сегодня', icon: 'sun',      mod: () => import('./pages/today.js') },
   { id: 'goals',    group: 'Главное',   title: 'Цели и задачи',    short: 'Цели', icon: 'target',   mod: () => import('./pages/goals.js') },
+  { id: 'projects', group: 'Главное',   title: 'Проекты',          short: 'Проекты', icon: 'layers',   mod: () => import('./pages/projects.js') },
   { id: 'habits',   group: 'Главное',   title: 'Привычки',         short: 'Привычки', icon: 'repeat',   mod: () => import('./pages/habits.js') },
   { id: 'journal',  group: 'Главное',   title: 'Рефлексия',        short: 'Дневник', icon: 'pen',      mod: () => import('./pages/journal.js') },
   { id: 'learning', group: 'Развитие',  title: 'Обучение',         short: 'Учёба', icon: 'brain',    mod: () => import('./pages/learning.js') },
@@ -49,28 +50,57 @@ function renderSidebar(activeId) {
     html += `<a class="nav-item ${p.id === activeId ? 'active' : ''} ${i >= MOBILE_TABS ? 'nav-secondary' : ''}" href="#/${p.id}" data-page="${p.id}">${icon(p.icon)}<span class="t-full">${esc(p.title)}</span><span class="t-short">${esc(p.short || p.title)}</span></a>`;
   });
   const moreActive = PAGES.findIndex(p => p.id === activeId) >= MOBILE_TABS;
-  html += `<button type="button" class="nav-item nav-more ${moreActive ? 'active' : ''}" data-more>${icon('more')}<span class="t-short">Ещё</span></button>`;
+  html += `<button type="button" class="nav-item nav-more ${moreActive ? 'active' : ''}" data-more aria-label="Открыть меню разделов">${icon('menu')}<span class="t-short">Меню</span></button>`;
   html += `</nav><div class="foot"><span class="hint"><span class="kbd">⌘K</span> команды</span><button class="theme-toggle" type="button" aria-label="Переключить тему" title="Переключить тему">${icon(isDark() ? 'sun' : 'moon')}</button></div>`;
   sidebar.innerHTML = html;
   sidebar.querySelector('.theme-toggle').addEventListener('click', () => db.setSettings({ theme: isDark() ? 'light' : 'dark' }));
-  sidebar.querySelector('[data-more]').addEventListener('click', () => openMoreSheet(activeId));
+  sidebar.querySelector('[data-more]').addEventListener('click', () => openDrawer(activeId));
   moveIndicator(activeId);
 }
 
-// Шторка «Ещё» на телефоне: все разделы плиткой, по группам.
-function openMoreSheet(activeId) {
+// Боковое меню на телефоне: выезжает слева, разделы по группам, как в десктопном сайдбаре.
+function openDrawer(activeId) {
+  if (document.querySelector('.drawer-backdrop')) return;
   let lastGroup = null, body = '';
   for (const p of PAGES) {
-    if (p.group !== lastGroup) { body += `${lastGroup ? '</div>' : ''}<div class="sheet-group">${esc(p.group)}</div><div class="sheet-grid">`; lastGroup = p.group; }
-    body += `<a class="sheet-tile ${p.id === activeId ? 'active' : ''}" href="#/${p.id}">${icon(p.icon)}<span>${esc(p.short || p.title)}</span></a>`;
+    if (p.group !== lastGroup) { body += `<div class="group">${esc(p.group)}</div>`; lastGroup = p.group; }
+    body += `<a class="nav-item ${p.id === activeId ? 'active' : ''}" href="#/${p.id}">${icon(p.icon)}<span>${esc(p.title)}</span></a>`;
   }
-  body += '</div>';
-  const wrap = el(`<div class="modal-backdrop sheet-backdrop"><div class="modal sheet" role="dialog" aria-label="Все разделы"><div class="sheet-handle"></div>${body}
-    <div class="sheet-foot"><button type="button" class="btn secondary block" data-close>Закрыть</button></div></div></div>`);
-  const close = () => { wrap.classList.add('closing'); setTimeout(() => wrap.remove(), 180); };
-  wrap.addEventListener('click', (e) => { if (e.target === wrap || e.target.closest('[data-close]') || e.target.closest('.sheet-tile')) close(); });
+  const wrap = el(`<div class="drawer-backdrop">
+    <aside class="drawer" role="dialog" aria-label="Разделы">
+      <div class="drawer-head"><div class="brand"><span class="logo"></span>ULTIMATE</div><button type="button" class="icon-btn sm" data-close aria-label="Закрыть">${icon('x')}</button></div>
+      <nav class="drawer-nav">${body}</nav>
+      <div class="drawer-foot">
+        <button type="button" class="btn secondary sm" data-toggle-theme>${icon(isDark() ? 'sun' : 'moon')} ${isDark() ? 'Светлая тема' : 'Тёмная тема'}</button>
+        <span class="tiny faint">${esc(db.settings().name || '')}</span>
+      </div>
+    </aside></div>`);
+  const close = () => {
+    wrap.classList.add('closing');
+    document.removeEventListener('keydown', onKey);
+    setTimeout(() => wrap.remove(), 220);
+  };
+  const onKey = (e) => { if (e.key === 'Escape') close(); };
+  document.addEventListener('keydown', onKey);
+  wrap.addEventListener('click', (e) => {
+    if (e.target === wrap || e.target.closest('[data-close]') || e.target.closest('.nav-item')) close();
+    if (e.target.closest("[data-toggle-theme]")) { db.setSettings({ theme: isDark() ? 'light' : 'dark' }); close(); }
+  });
+  // Свайп влево по меню — закрыть
+  let x0 = null;
+  wrap.addEventListener('touchstart', (e) => { x0 = e.touches[0].clientX; }, { passive: true });
+  wrap.addEventListener('touchend', (e) => { if (x0 != null && x0 - e.changedTouches[0].clientX > 60) close(); x0 = null; }, { passive: true });
   document.getElementById('modals').appendChild(wrap);
+  requestAnimationFrame(() => wrap.classList.add('open'));
 }
+
+// Свайп от левого края экрана — открыть меню (только на телефоне)
+let edgeX = null;
+document.addEventListener('touchstart', (e) => { edgeX = e.touches[0].clientX <= 24 ? e.touches[0].clientX : null; }, { passive: true });
+document.addEventListener('touchend', (e) => {
+  if (edgeX != null && window.innerWidth <= 860 && e.changedTouches[0].clientX - edgeX > 70) openDrawer(parseHash().id);
+  edgeX = null;
+}, { passive: true });
 
 function moveIndicator(activeId) {
   const ind = sidebar.querySelector('.indicator'), a = sidebar.querySelector(`.nav-item[data-page="${activeId}"]`);

@@ -310,18 +310,41 @@ svg[aria-hidden="true"] { width: 1em; height: 1em; vertical-align: -0.15em; flex
   .modal { border-radius: 20px 20px 0 0; max-height: 92vh; border-bottom: 0; }
   .modal-foot { padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px)); }
 }
-/* ---------- Шторка «Ещё» (разделы на телефоне) ---------- */
-.sheet { padding: 8px 16px 0; }
-.sheet-handle { width: 36px; height: 4px; border-radius: 4px; background: var(--line-2); margin: 4px auto 10px; }
-.sheet-group { font-size: 10.5px; text-transform: uppercase; letter-spacing: .12em; color: var(--fg-3); font-weight: 600; padding: 10px 2px 8px; }
-.sheet-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
-.sheet-tile { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 12px 4px 10px; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--line); color: var(--fg-2); font-size: 11px; font-weight: 500; text-align: center; transition: background .2s, color .2s; }
-.sheet-tile svg { width: 22px; height: 22px; }
-.sheet-tile.active { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
-.sheet-tile:active { background: var(--surface-3); }
-.sheet-foot { padding: 14px 0 calc(14px + env(safe-area-inset-bottom, 0px)); }
-.sheet-backdrop.closing { animation: fade .18s reverse forwards; }
-.sheet-backdrop.closing .modal { animation: pop .18s reverse forwards; }
+/* ---------- Боковое меню (телефон) ---------- */
+.drawer-backdrop { position: fixed; inset: 0; z-index: 110; background: rgba(0,0,0,0); transition: background .25s; }
+.drawer-backdrop.open { background: rgba(0,0,0,.55); }
+.drawer-backdrop.closing { background: rgba(0,0,0,0); }
+.drawer { position: absolute; top: 0; bottom: 0; left: 0; width: min(300px, 84vw); background: var(--surface); border-right: 1px solid var(--line-2); display: flex; flex-direction: column; transform: translateX(-100%); transition: transform .28s var(--ease); box-shadow: 30px 0 80px -30px rgba(0,0,0,.8); padding: calc(10px + env(safe-area-inset-top, 0px)) 12px calc(12px + env(safe-area-inset-bottom, 0px)); overflow-y: auto; }
+.drawer-backdrop.open .drawer { transform: none; }
+.drawer-backdrop.closing .drawer { transform: translateX(-100%); }
+.drawer-head { display: flex; align-items: center; justify-content: space-between; padding: 6px 4px 12px; }
+.drawer-head .brand { font-family: var(--font-display); font-weight: 700; font-size: 16px; letter-spacing: 0.12em; text-transform: uppercase; display: flex; align-items: center; gap: 10px; }
+.drawer-head .logo { width: 24px; height: 24px; border-radius: 7px; background: linear-gradient(135deg, var(--accent), var(--accent-2)); box-shadow: 0 0 16px -2px var(--accent); position: relative; }
+.drawer-head .logo::after { content: ""; position: absolute; inset: 6px; border-radius: 50%; background: var(--accent-ink); opacity: .95; }
+.drawer-nav { display: flex; flex-direction: column; gap: 2px; }
+.drawer-nav .group { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.12em; color: var(--fg-3); font-weight: 600; padding: 14px 12px 6px; }
+.drawer-nav .nav-item { display: flex; flex-direction: row; align-items: center; gap: 12px; padding: 11px 12px; height: auto; min-height: 44px; border-radius: 10px; font-size: 14px; font-weight: 500; color: var(--fg-2); text-align: left; }
+.drawer-nav .nav-item svg { width: 19px; height: 19px; }
+.drawer-nav .nav-item.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.drawer-foot { margin-top: auto; padding: 14px 4px 0; border-top: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+
+/* ---------- Проекты ---------- */
+.pgrid { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
+.pcard { border-left: 3px solid var(--pc); }
+.pcard.is-done { opacity: .72; }
+.pcard-title { font-weight: 600; font-size: 15.5px; cursor: pointer; letter-spacing: -0.01em; }
+.pcard-title:hover { color: var(--accent); }
+.pcard-desc { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.pcard-next { background: var(--surface-2); border-radius: var(--radius-s); padding: 8px 10px; }
+.pcard-next svg { color: var(--accent); }
+.plog { display: flex; flex-direction: column; gap: 4px; border-top: 1px solid var(--line); padding-top: 8px; }
+.plog-item { display: flex; align-items: flex-start; gap: 8px; font-size: 12.5px; }
+.plog-date { color: var(--fg-3); font-size: 11px; white-space: nowrap; padding-top: 2px; min-width: 52px; }
+.plog-text { flex: 1; min-width: 0; color: var(--fg-2); white-space: pre-wrap; }
+.plog-del { width: 22px; height: 22px; opacity: 0; transition: opacity .2s; }
+.plog-item:hover .plog-del { opacity: 1; }
+@media (hover: none) { .plog-del { opacity: .6; } }
+.pnotes { white-space: pre-wrap; font-size: 14px; line-height: 1.55; }
 
 /* ---------- Toasts ---------- */
 #toasts { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 8px; z-index: 200; pointer-events: none; }
