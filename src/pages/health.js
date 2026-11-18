@@ -7,6 +7,7 @@ const SYMPTOMS = ['головная боль', 'усталость', 'плохо
 const MOOD = ['😞', '😕', '😐', '🙂', '😄'];
 const ENERGY = ['🪫', '😴', '😐', '⚡', '🔥'];
 const STRESS = ['😌', '🙂', '😐', '😬', '🤯'];
+const CONFIDENCE = ['🫣', '😟', '😐', '😎', '🦁'];
 const TODO_TYPES = { appointment: 'Приём', test: 'Анализ', other: 'Другое' };
 const TIMES = [['morning', 'Утро'], ['day', 'День'], ['evening', 'Вечер']];
 const dm = (d) => `${d.slice(8, 10)}.${d.slice(5, 7)}`;
@@ -164,12 +165,13 @@ export async function render(root, ctx) {
 
   const days14 = lastNDays(14);
   const mk = (k) => days14.map((d, i) => ({ x: i, y: byDate.get(d)?.[k] ?? null })).filter(p => p.y != null);
-  const energyPts = mk('energy'), moodPts = mk('mood'), stressPts = mk('stress');
-  const moodChart = (energyPts.length + moodPts.length + stressPts.length) > 0
+  const energyPts = mk('energy'), moodPts = mk('mood'), stressPts = mk('stress'), confPts = mk('confidence');
+  const moodChart = (energyPts.length + moodPts.length + stressPts.length + confPts.length) > 0
     ? lineChart([
         { points: energyPts, color: 'var(--c2)' },
         { points: moodPts, color: 'var(--c1)' },
         { points: stressPts, color: 'var(--c4)' },
+        { points: confPts, color: 'var(--c3)' },
       ], days14.map(weekdayShort), { min: 1, max: 5 })
     : emptyState('Заполните чек-ин, чтобы увидеть динамику', '📈');
 
@@ -253,6 +255,7 @@ export async function render(root, ctx) {
           ${field({ name: 'mood', label: 'Настроение', type: 'rating', value: cur?.mood, labels: MOOD })}
           ${field({ name: 'energy', label: 'Энергия', type: 'rating', value: cur?.energy, labels: ENERGY })}
           ${field({ name: 'stress', label: 'Стресс', type: 'rating', value: cur?.stress, labels: STRESS })}
+          ${field({ name: 'confidence', label: 'Уверенность', type: 'rating', value: cur?.confidence, labels: CONFIDENCE })}
         </div>
         ${field({ name: 'weight', label: 'Вес, кг', type: 'number', value: cur?.weight ?? '', step: 0.1, min: 20, max: 300, placeholder: '70.5' })}
         <div class="field"><label>Симптомы</label>
@@ -273,12 +276,13 @@ export async function render(root, ctx) {
           ${weightChart}
         </div>
         <div class="card">
-          <h3>Энергия, настроение, стресс · 14 дней</h3>
+          <h3>Энергия, настроение, стресс, уверенность · 14 дней</h3>
           ${moodChart}
           <div class="legend" style="margin-top:8px">
             <span><i class="sw" style="background:var(--c2)"></i>Энергия</span>
             <span><i class="sw" style="background:var(--c1)"></i>Настроение</span>
             <span><i class="sw" style="background:var(--c4)"></i>Стресс</span>
+            <span><i class="sw" style="background:var(--c3)"></i>Уверенность</span>
           </div>
         </div>
       </div>
@@ -373,7 +377,7 @@ export async function render(root, ctx) {
     e.preventDefault();
     const d = formData(e.target);
     const symptoms = [...e.target.querySelectorAll('[data-sym].active')].map(b => b.dataset.sym);
-    const rec = { date: day, mood: d.mood, energy: d.energy, stress: d.stress, weight: d.weight, symptoms, notes: d.notes };
+    const rec = { date: day, mood: d.mood, energy: d.energy, stress: d.stress, confidence: d.confidence, weight: d.weight, symptoms, notes: d.notes };
     db.upsert('checkins', cur ? { id: cur.id, ...rec } : rec);
     toast('Чек-ин сохранён');
   });

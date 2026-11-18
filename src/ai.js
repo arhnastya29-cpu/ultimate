@@ -129,7 +129,7 @@ export function buildContext(pageId) {
   const workouts = db.all('workouts').filter(w => two.includes(w.date));
   const body = [];
   if (sleep.length) body.push(`сон за неделю: в среднем ${avg(sleep, x => x.hours).toFixed(1)} ч при цели ${s.sleepTarget}, качество ${avg(sleep, x => x.quality).toFixed(1)}/5, записей ${sleep.length}`);
-  if (checks.length) body.push(`самочувствие за неделю: настроение ${avg(checks, x => x.mood).toFixed(1)}, энергия ${avg(checks, x => x.energy).toFixed(1)}, стресс ${avg(checks, x => x.stress).toFixed(1)} (из 5)`);
+  if (checks.length) body.push(`самочувствие за неделю: настроение ${avg(checks, x => x.mood).toFixed(1)}, энергия ${avg(checks, x => x.energy).toFixed(1)}, стресс ${avg(checks, x => x.stress).toFixed(1)}, уверенность ${avg(checks.filter(x => x.confidence), x => x.confidence).toFixed(1)} (из 5)`);
   if (meals.length || dayLog) body.push(`питание сегодня: ${Math.round(meals.reduce((a, m) => a + (m.kcal || 0), 0))} ккал из ${s.kcalTarget}, белок ${Math.round(meals.reduce((a, m) => a + (m.protein || 0), 0))} г из ${s.proteinTarget}, вода ${dayLog?.waterMl || 0} мл из ${s.waterTarget}, шаги ${dayLog?.steps || 0} из ${s.stepsTarget}`);
   body.push(`тренировок за 14 дней: ${workouts.length}${workouts.length ? ` (${workouts.slice(0, 5).map(w => `${w.date} ${cut(w.title || w.type, 30)}`).join(', ')})` : ''}`);
   L.push(`\n## Тело\n` + body.map(b => '- ' + b).join('\n'));
@@ -248,7 +248,7 @@ function systemPrompt(pageId) {
 
 Ниже дана выжимка реальных данных пользователя на сегодня. Опирайся только на неё и на то, что пользователь пишет; ничего не выдумывай. Если данных не хватает — скажи, чего именно, и задай один точный вопрос.
 
-Стиль: по-русски, на «ты», коротко и по делу, как опытный коуч и ассистент одновременно. Конкретные советы вместо общих слов. Нумерованные списки для шагов, без воды и без лишних вступлений. Когда уместно — ссылайся на цифры из данных. Если видишь перегруз (много просроченного, мало сна, высокий стресс) — скажи об этом прямо и предложи, что убрать.
+Стиль: по-русски, на «ты», коротко и по делу, как опытный коуч и ассистент одновременно. Конкретные советы вместо общих слов. Нумерованные списки для шагов, без воды и без лишних вступлений. Когда уместно — ссылайся на цифры из данных. Если видишь перегруз (много просроченного, мало сна, высокий стресс, низкая уверенность) — скажи об этом прямо и предложи, что убрать.
 
 Для раздела Shadow: помогай готовиться к разговорам с CEO, опираясь на записанные рекомендации и наблюдения; формулируй, как лучше подать вопрос или результат именно этому человеку.
 

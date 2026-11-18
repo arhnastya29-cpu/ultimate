@@ -156,11 +156,12 @@ export async function render(root, { navigate }) {
           ${habitsEdit ? '<div class="tiny faint" style="margin-top:8px">Тап по привычке открывает её настройки, крестик убирает в архив. Порядок и дни — на странице «Привычки».</div>' : ''}
         </div>` },
     { id: 'checkin', title: 'Чек-ин: сон, энергия, настроение', col: 1, html: `<div class="card qc">
-          <div class="section-title"><h2>${icon('heart')} Как вы сегодня</h2><span class="tiny muted">${sleep && checkin?.mood && checkin?.energy ? 'записано ✓' : 'одно касание'}</span></div>
+          <div class="section-title"><h2>${icon('heart')} Как вы сегодня</h2><span class="tiny muted">${sleep && checkin?.mood && checkin?.energy && checkin?.confidence ? 'записано ✓' : 'одно касание'}</span></div>
           <div class="qc-grid">
             <div><div class="label caps">Сон, часов</div><div class="qc-rate" data-sleep>${[5, 6, 7, 8, 9].map(v => `<button type="button" class="${sleep && Math.round(sleep.hours) === v ? 'active' : ''}" data-v="${v}">${v}</button>`).join('')}${sleep && ![5, 6, 7, 8, 9].includes(Math.round(sleep.hours)) ? `<span class="tiny muted">${fmtNum(sleep.hours, 1)}</span>` : ''}</div></div>
             <div><div class="label caps">Энергия</div>${rate('energy', checkin?.energy, ['нет сил', 'мало', 'нормально', 'хорошо', 'полна сил'])}</div>
             <div><div class="label caps">Настроение</div>${rate('mood', checkin?.mood, ['плохо', 'так себе', 'ровно', 'хорошо', 'отлично'])}</div>
+            <div><div class="label caps">Уверенность</div>${rate('confidence', checkin?.confidence, ['совсем нет', 'шатко', 'нормально', 'уверенно', 'непобедима'])}</div>
           </div>
         </div>` },
     { id: 'reflect', title: 'Вечерняя рефлексия', col: 1, html: evening ? `<div class="card reflect">
@@ -300,7 +301,7 @@ export async function render(root, { navigate }) {
   on(view, 'click', '[data-rate] button', (e, b) => {
     const name = b.closest('[data-rate]').dataset.rate; const v = Number(b.dataset.v);
     if (checkin) db.update('checkins', checkin.id, { [name]: v });
-    else db.add('checkins', { date: d, mood: null, energy: null, stress: null, symptoms: [], notes: '', [name]: v });
+    else db.add('checkins', { date: d, mood: null, energy: null, stress: null, confidence: null, symptoms: [], notes: '', [name]: v });
   });
   view.querySelector('#quickTask')?.addEventListener('submit', (e) => {
     e.preventDefault();

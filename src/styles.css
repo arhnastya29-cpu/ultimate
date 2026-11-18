@@ -442,7 +442,7 @@ svg[aria-hidden="true"] { width: 1em; height: 1em; vertical-align: -0.15em; flex
 .habit-row.editing .habit-chip { animation: blk-wiggle 1.8s ease-in-out infinite; }
 .hc-x { display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: var(--bad-soft); color: var(--bad); margin-left: 2px; }
 .hc-x svg { width: 11px; height: 11px; }
-.qc-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.qc-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
 .qc-grid .label { margin-bottom: 6px; }
 .qc-rate { display: inline-flex; gap: 4px; align-items: center; flex-wrap: wrap; }
 .qc-rate button { width: 34px; height: 34px; border-radius: 9px; border: 1px solid var(--line); background: var(--surface-2); color: var(--fg-2); font-weight: 600; font-size: 13px; font-family: var(--font-num); transition: all .2s var(--spring); }
