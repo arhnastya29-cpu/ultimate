@@ -411,6 +411,20 @@ svg[aria-hidden="true"] { width: 1em; height: 1em; vertical-align: -0.15em; flex
   .ai-input { font-size: 16px; }
 }
 
+/* ---------- Заметки ---------- */
+.ngrid { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
+.ncard { display: flex; flex-direction: column; gap: 8px; }
+.ncard-title { font-weight: 600; font-size: 15px; line-height: 1.3; cursor: pointer; letter-spacing: -0.01em; }
+.ncard-title:hover { color: var(--accent); }
+.ncard-src { line-height: 1.4; }
+.ncard-quote { font-family: var(--font-display); font-size: 15px; line-height: 1.5; border-left: 3px solid var(--gold); padding-left: 10px; color: var(--fg); }
+.ncard .tag { cursor: pointer; }
+.ncard .tag.active { background: var(--accent-soft); color: var(--accent); }
+.ntags { flex-wrap: wrap; overflow: visible; mask-image: none; -webkit-mask-image: none; }
+.nsource { margin-bottom: 22px; }
+.nsource .section-title h2 { display: flex; align-items: center; gap: 8px; font-size: 16px; }
+@media (max-width: 860px) { .ntags { flex-wrap: nowrap; overflow-x: auto; } }
+
 /* ---------- Toasts ---------- */
 #toasts { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 8px; z-index: 200; pointer-events: none; }
 .toast { background: var(--fg); color: var(--bg); padding: 10px 16px; border-radius: 999px; font-size: 13px; font-weight: 600; box-shadow: 0 16px 40px -10px rgba(0,0,0,0.4); animation: toast-in .4s var(--spring); display: flex; align-items: center; gap: 8px; }

@@ -52,15 +52,15 @@ export async function render(root, { params, navigate, page }) {
 | `habits` | `name, icon (emoji), color, days: number[] (0=пн..6=вс; пусто = ежедневно), target (раз в день, по умолчанию 1), archived bool, order` |
 | `habitLogs` | `habitId, date, count` |
 | `sleepLogs` | `date (дата пробуждения, уникальна), bedTime 'HH:MM', wakeTime 'HH:MM', hours (number), quality 1-5, energy 1-5, notes` |
-| `books` | `title, author, status: 'want'\|'reading'\|'done', rating 1-5?, pages?, pagesRead?, areaId?, startedAt?, finishedAt?, summary` |
-| `notes` | `title, body, tags: string[], bookId?, areaId?, pinned bool` |
+| `books` | устаревшая коллекция; один раз переносится в `notes` (id `book_<id>`), страница не показывает |
+| `notes` | единые заметки: `kind: 'summary'\|'idea'\|'quote', sourceType: 'book'\|'article'\|'podcast'\|'video'\|'course'\|'thought'\|'other', sourceTitle, sourceAuthor, sourceUrl, title, body, tags: string[] (нижний регистр), pinned, rating 1-5?, date`; старые поля `bookId/areaId` сохраняются |
 | `transactions` | `date, type: 'income'\|'expense', amount (number), category, note` |
 | `budgets` | `category, monthlyLimit` |
 | `financeGoals` | `title, target, saved, deadline?` |
 | `journal` | `date (уникальна), wentWell, improve, gratitude, lessons, highlight, mood 1-5` |
 | `weeklyReviews` | `weekStart (date пн), wins, challenges, nextFocus, rating 1-5` |
 
-Настройки: `db.settings()` → `{ name, theme, visionStatement, kcalTarget, proteinTarget, fatTarget, carbsTarget, waterTarget, sleepTarget, stepsTarget, currency, learningWeeklyMinutes }`.
+Настройки: `db.settings()` → `{ name, theme, visionStatement, notesV (версия миграции заметок), kcalTarget, proteinTarget, fatTarget, carbsTarget, waterTarget, sleepTarget, stepsTarget, currency, learningWeeklyMinutes }`.
 
 Общая форма задачи — `src/pages/task-modal.js` (`openTaskModal(task, { defaults, lockProject })`), используется в целях и внутри проекта. Страница проекта: `#/projects?id=<id>` (стримы, задачи по стримам, журнал).
 

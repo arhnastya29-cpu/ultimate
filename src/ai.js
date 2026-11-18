@@ -129,10 +129,10 @@ export function buildContext(pageId) {
     L.push(`\n## Финансы за ${month}\n- доходы ${Math.round(inc)}, расходы ${Math.round(exp)} ${s.currency || ''}; крупнейшие категории: ${top}`);
   }
   const sessions = db.all('studySessions').filter(x => week.includes(x.date));
-  const reading = db.all('books').filter(b => b.status === 'reading');
+  const notes = db.all('notes').sort((a, b) => ((b.date || b.createdAt || '') > (a.date || a.createdAt || '') ? 1 : -1)).slice(0, 8);
   const learn = [];
   if (sessions.length || s.learningWeeklyMinutes) learn.push(`обучение за неделю: ${sessions.reduce((a, x) => a + (Number(x.minutes) || 0), 0)} мин из ${s.learningWeeklyMinutes}`);
-  if (reading.length) learn.push(`читает: ${reading.slice(0, 4).map(b => `«${cut(b.title, 40)}»${b.pages ? ` ${pct(b.pagesRead || 0, b.pages)}%` : ''}`).join(', ')}`);
+  if (notes.length) learn.push(`последние заметки (книги, статьи, подкасты): ${notes.map(n => `«${cut(n.title, 50)}»${n.sourceTitle ? ` из «${cut(n.sourceTitle, 30)}»` : ''}${(n.tags || []).length ? ` #${n.tags.slice(0, 3).join(' #')}` : ''}`).join('; ')}`);
   if (learn.length) L.push(`\n## Развитие\n` + learn.map(b => '- ' + b).join('\n'));
 
   return L.join('\n');
@@ -341,7 +341,7 @@ export function quickPrompts(pageId) {
     workouts: ['Оцени мою активность за 2 недели', 'Составь план тренировок на неделю'],
     finance: ['Куда уходят деньги в этом месяце?', 'Где можно сократить расходы?'],
     learning: ['Как распределить учёбу на неделю?'],
-    books: ['Что дочитать первым и почему?'],
+    notes: ['Какие идеи из заметок стоит применить на этой неделе?', 'Сведи мои заметки по теме в выводы'],
   };
   return map[pageId] || ['Что мне стоит сделать сегодня?', 'Дай три совета по моей ситуации'];
 }

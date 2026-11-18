@@ -14,7 +14,7 @@ export const PAGES = [
   { id: 'habits',   group: 'Главное',   title: 'Привычки',         short: 'Привычки', icon: 'repeat',   mod: () => import('./pages/habits.js') },
   { id: 'journal',  group: 'Главное',   title: 'Рефлексия',        short: 'Дневник', icon: 'pen',      mod: () => import('./pages/journal.js') },
   { id: 'learning', group: 'Развитие',  title: 'Обучение',         short: 'Учёба', icon: 'brain',    mod: () => import('./pages/learning.js') },
-  { id: 'books',    group: 'Развитие',  title: 'Книги и заметки',  short: 'Книги', icon: 'library',  mod: () => import('./pages/books.js') },
+  { id: 'notes',    group: 'Развитие',  title: 'Заметки',          short: 'Заметки', icon: 'library',  mod: () => import('./pages/notes.js') },
   { id: 'health',   group: 'Тело',      title: 'Здоровье',         short: 'Здоровье', icon: 'heart',    mod: () => import('./pages/health.js') },
   { id: 'workouts', group: 'Тело',      title: 'Тренировки',       short: 'Спорт', icon: 'dumbbell', mod: () => import('./pages/workouts.js') },
   { id: 'nutrition',group: 'Тело',      title: 'Питание',          icon: 'utensils', mod: () => import('./pages/nutrition.js') },
@@ -36,7 +36,8 @@ export function navigate(id, params = {}) {
 
 function parseHash() {
   const h = location.hash.replace(/^#\/?/, '');
-  const [id, q] = h.split('?');
+  const [rawId, q] = h.split('?');
+  const id = rawId === 'books' ? 'notes' : rawId;   // старый адрес раздела книг
   return { id: id || 'today', params: Object.fromEntries(new URLSearchParams(q || '')) };
 }
 
@@ -172,7 +173,7 @@ document.addEventListener('keydown', (e) => {
   if (e.target.matches('input, textarea, select') || e.metaKey || e.ctrlKey) return;
   if (e.key === 'g') { gPending = true; setTimeout(() => gPending = false, 800); return; }
   if (!gPending) return;
-  const map = { t: 'today', g: 'goals', h: 'habits', j: 'journal', l: 'learning', b: 'books', z: 'health', w: 'workouts', n: 'nutrition', s: 'sleep', f: 'finance', ',': 'settings' };
+  const map = { t: 'today', g: 'goals', h: 'habits', j: 'journal', l: 'learning', b: 'notes', z: 'health', w: 'workouts', n: 'nutrition', s: 'sleep', f: 'finance', ',': 'settings' };
   if (map[e.key]) { navigate(map[e.key]); gPending = false; }
 });
 
