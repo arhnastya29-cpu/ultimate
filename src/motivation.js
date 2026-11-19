@@ -1,6 +1,7 @@
 // Чемпионские послания: приветствие, цитата дня, короткие подбадривания при закрытии дел.
 // Всё детерминировано по дате, чтобы цитата дня не прыгала при перерисовках.
 import { today } from './ui.js';
+import { db } from './db.js';
 
 export const TITLE = 'чемпион';
 
@@ -71,12 +72,37 @@ export function greetingFor(hour = new Date().getHours()) {
   return `${g}, ${TITLE}`;
 }
 
-export function dailyQuote(salt = '') { return QUOTES[hash(today() + '|' + salt) % QUOTES.length]; }
+// Пул посланий: рекомендации CEO из Shadow с пометкой «в послания». Если таких нет — встроенные цитаты.
+export function ceoPool() {
+  return db.all('shadowNotes')
+    .filter(n => n.type === 'advice' && n.quote)
+    .map(n => { const body = String(n.body || '').trim(); const text = body && body.length <= 180 ? body : n.title; return { text, id: n.id }; })
+    .filter(q => q.text);
+}
+export function hasCeoQuotes() { return ceoPool().length > 0; }
 
-// На страницах, кроме главной, послание показывается примерно в трети случаев — «иногда», а не всегда.
+let rot = 0;                       // ручное пролистывание («следующая») в рамках сессии
+export function nextQuote() { rot++; }
+
+function pick(seed) {
+  const pool = ceoPool();
+  if (pool.length) return { text: pool[(hash(seed) + rot) % pool.length].text, ceo: true };
+  return { text: QUOTES[(hash(seed) + rot) % QUOTES.length], ceo: false };
+}
+
+export function dailyQuote(salt = '') { return pick(today() + '|' + salt); }
+
+// На других страницах: рекомендации CEO чередуются на каждой странице; встроенные цитаты — лишь иногда.
 export function maybePageQuote(pageId) {
-  const h = hash(today() + '#' + pageId);
-  return h % 3 === 0 ? QUOTES[h % QUOTES.length] : null;
+  const seed = today() + '#' + pageId;
+  if (ceoPool().length) return pick(seed);
+  const h = hash(seed);
+  return h % 3 === 0 ? { text: QUOTES[(h + rot) % QUOTES.length], ceo: false } : null;
+}
+
+export function quoteHtml(q, esc) {
+  if (!q) return '';
+  return `<div class="champ-line" data-quote title="Нажмите, чтобы показать следующее">«${esc(q.text)}»${q.ceo ? ' <span class="champ-src">— CEO</span>' : ''}</div>`;
 }
 
 export function cheer() { return CHEERS[Math.floor(Math.random() * CHEERS.length)]; }

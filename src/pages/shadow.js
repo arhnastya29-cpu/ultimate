@@ -59,9 +59,10 @@ function openNoteModal(note, type = noteTab) {
       ${field({ name: 'body', label: 'Подробно', type: 'textarea', value: n.body || '', rows: 6, placeholder: n.type === 'advice' ? 'Как он это сформулировал, в какой ситуации, как применить' : 'Что заметила: как он принимает решения, что ценит, чего не любит, как лучше заходить с вопросами' })}
       ${field({ name: 'tags', label: 'Теги', value: (n.tags || []).join(', '), placeholder: 'через запятую: встречи, презентации, стиль' })}
       ${field({ name: 'pinned', label: 'Закрепить сверху', type: 'checkbox', value: !!n.pinned })}
+      ${field({ name: 'quote', label: 'В послания — показывать как цитату CEO на главной и других страницах', type: 'checkbox', value: !!n.quote })}
     </div>`,
     onSubmit: (d) => {
-      const patch = { type: NOTE_TYPES[d.type] ? d.type : 'note', date: d.date || today(), title: d.title.trim(), body: d.body || '', tags: parseTags(d.tags), pinned: !!d.pinned };
+      const patch = { type: NOTE_TYPES[d.type] ? d.type : 'note', date: d.date || today(), title: d.title.trim(), body: d.body || '', tags: parseTags(d.tags), pinned: !!d.pinned, quote: !!d.quote && (NOTE_TYPES[d.type] ? d.type : 'note') === 'advice' };
       if (isNew) { db.add('shadowNotes', patch); toast(patch.type === 'advice' ? 'Рекомендация записана' : 'Заметка записана'); }
       else { db.update('shadowNotes', n.id, patch); toast('Сохранено'); }
       noteTab = patch.type;
@@ -96,8 +97,8 @@ function taskRow(x, t) {
 function noteCard(n) {
   return `<div class="card stack tight ${n.pinned ? 'is-pinned' : ''}">
     <div class="row between">
-      <span class="row" style="gap:6px"><span class="pill ${n.type === 'advice' ? 'accent' : ''}">${esc(NOTE_TYPES[n.type] || 'Заметка')}</span>${n.pinned ? `<span class="tag">${icon('star')} закреплено</span>` : ''}</span>
-      <span class="tiny faint">${esc(fmtDate(n.date, { relative: false }))}</span>
+      <span class="row" style="gap:6px"><span class="pill ${n.type === 'advice' ? 'accent' : ''}">${esc(NOTE_TYPES[n.type] || 'Заметка')}</span>${n.pinned ? `<span class="tag">${icon('star')} закреплено</span>` : ''}${n.quote ? `<span class="tag accent">${icon('zap')} в посланиях</span>` : ''}</span>
+      <span class="row" style="gap:6px"><span class="tiny faint">${esc(fmtDate(n.date, { relative: false }))}</span>${n.type === 'advice' ? `<button type="button" class="icon-btn sm ${n.quote ? 'primary' : ''}" data-action="quote-toggle" data-id="${esc(n.id)}" aria-label="В послания" data-tip="${n.quote ? 'Убрать из посланий' : 'Показывать как послание на главной'}">${icon('zap')}</button>` : ''}</span>
     </div>
     <div class="bold" style="font-size:14.5px;cursor:pointer" data-action="edit-note" data-id="${esc(n.id)}">${esc(n.title)}</div>
     ${n.body ? `<div class="small muted pnotes">${esc(n.body)}</div>` : ''}
@@ -153,7 +154,7 @@ export async function render(root) {
         ${list.length
           ? list.map(noteCard).join('')
           : `<div class="card">${emptyState(noteTab === 'advice'
-              ? 'Сюда идут его советы, правила и формулировки, которые стоит запомнить. Закрепляйте главные'
+              ? 'Сюда идут его советы, правила и формулировки, которые стоит запомнить. Молния у рекомендации — и она станет посланием на главной'
               : 'Сюда идут наблюдения: как он принимает решения, что ценит, как лучше заходить с вопросами', noteTab === 'advice' ? '💡' : '🧭')}</div>`}
       </div>
     </div></div>`;
@@ -169,6 +170,7 @@ export async function render(root) {
     if (!x.done) toast('Отмечено выполненным. Добавьте результат в карточке, если важно запомнить реакцию');
   });
   on(view, 'click', '[data-action="toggle-done"]', () => { showDone = !showDone; render(root); });
+  on(view, 'click', '[data-action="quote-toggle"]', (e, el) => { const n = db.get('shadowNotes', el.dataset.id); if (!n) return; db.update('shadowNotes', n.id, { quote: !n.quote }); toast(n.quote ? 'Убрано из посланий' : 'Теперь это послание будет появляться на главной и других страницах'); });
   on(view, 'click', '[data-action="note-tab"]', (e, el) => { noteTab = el.dataset.tab; render(root); });
   const inp = view.querySelector('[data-search]');
   inp.addEventListener('input', () => { search = inp.value; const pos = inp.selectionStart; render(root); const n = view.querySelector('[data-search]'); n.focus(); n.setSelectionRange(pos, pos); });

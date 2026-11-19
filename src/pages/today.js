@@ -3,7 +3,7 @@
 import { db } from '../db.js';
 import { composeBlocks, customizeButton, bindCustomize } from '../blocks.js';
 import { occursOn } from './calendar.js';
-import { greetingFor, dailyQuote, cheer, habitCheer } from '../motivation.js';
+import { greetingFor, dailyQuote, quoteHtml, cheer, habitCheer } from '../motivation.js';
 import { esc, icon, today, addDays, fmtDate, fmtDateLong, fmtMinutes, fmtNum, fmtMoney, progressBar, checkBtn, on, toast, weekDays, lastNDays, sum, monthKey, plural, daysBetween, clamp } from '../ui.js';
 
 export const title = 'Сегодня';
@@ -256,7 +256,7 @@ export async function render(root, { navigate }) {
       <div>
         <div class="eyebrow">${esc(fmtDateLong(d))}</div>
         <h1>${greetingFor()}</h1>
-        <div class="champ-line">«${esc(dailyQuote())}»</div>
+        ${quoteHtml(dailyQuote(), esc)}
         <div class="small muted" style="margin-top:6px">${status}</div>
       </div>
       <div class="actions">

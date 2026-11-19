@@ -4,7 +4,7 @@ import { afterRender, watchCelebrations, openCommandPalette } from './fx.js';
 import { initSync } from './sync.js';
 import { initAiPanel, setAiPage } from './ai-panel.js';
 import { afterPageRender, toggleEditMode } from './blocks.js';
-import { maybePageQuote } from './motivation.js';
+import { maybePageQuote, quoteHtml, nextQuote } from './motivation.js';
 
 // Реестр страниц. Каждая страница — модуль, экспортирующий { title, render(root) }.
 // render может вернуть функцию очистки. На любое изменение данных страница перерисовывается.
@@ -148,7 +148,7 @@ async function renderPage(force = false) {
   // в том числе при внутренних перерисовках (страница сама заменяет root.innerHTML).
   afterPageRender(pageRoot, page.id);
   // Чемпионское послание на некоторых страницах (детерминировано по дню и разделу)
-  if (page.id !== 'today' && changed) { const q = maybePageQuote(page.id); const h1 = pageRoot.querySelector('.page-head h1'); if (q && h1 && !pageRoot.querySelector('.champ-line')) h1.insertAdjacentHTML('afterend', `<div class="champ-line">«${esc(q)}»</div>`); }
+  if (page.id !== 'today' && changed) { const q = maybePageQuote(page.id); const h1 = pageRoot.querySelector('.page-head h1'); if (q && h1 && !pageRoot.querySelector('.champ-line')) h1.insertAdjacentHTML('afterend', quoteHtml(q, esc)); }
   {
     const obs = new MutationObserver(() => afterPageRender(pageRoot, page.id));
     obs.observe(pageRoot, { childList: true });
@@ -161,6 +161,8 @@ async function renderPage(force = false) {
   afterRender(pageRoot, { changed });
 }
 document.addEventListener('click', (e) => {
+  const ql = e.target.closest('.champ-line[data-quote]');
+  if (ql) { nextQuote(); renderPage(true); return; }
   const b = e.target.closest('[data-customize]');
   if (b && !document.querySelector('#page .blocks[data-page]')) toggleEditMode(b.dataset.customize);
 });

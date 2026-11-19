@@ -559,7 +559,10 @@ svg[aria-hidden="true"] { width: 1em; height: 1em; vertical-align: -0.15em; flex
 }
 
 /* ---------- Чемпионские послания ---------- */
-.champ-line { font-family: var(--font-display); font-size: 14px; color: var(--accent); margin-top: 6px; letter-spacing: -0.005em; line-height: 1.4; max-width: 640px; }
+.champ-line { font-family: var(--font-display); font-size: 14px; color: var(--accent); margin-top: 6px; letter-spacing: -0.005em; line-height: 1.4; max-width: 640px; cursor: pointer; }
+.champ-line:hover { opacity: .85; }
+.champ-src { font-size: 11px; color: var(--fg-3); font-family: var(--font-body); letter-spacing: .06em; text-transform: uppercase; margin-left: 4px; }
+.tag.accent { background: var(--accent-soft); color: var(--accent); }
 .page-head .champ-line { margin-top: 8px; }
 @media (max-width: 860px) { .champ-line { font-size: 13px; } }
 

@@ -36,7 +36,7 @@ export async function render(root, { params, navigate, page }) {
 | `projects` | `name, description, status: 'idea'\|'active'\|'paused'\|'done', priority 1\|2\|3, deadline (date|null), progress 0-100, nextStep, link, tags: string[], notes, color, startedAt, finishedAt?, log: [{id, date, text}] (журнал событий, новые сверху)` |
 | `visionItems` | доска «Визуализация» (вкладка на странице целей): `type: 'image'\|'text', src (data URL JPEG, сжато до 1400px), w, h, caption, area?, order` |
 | `shadowTasks` | задачи от CEO: `title, context, deadline (date|null), priority 1\|2\|3, done, doneAt?, result, receivedAt` |
-| `shadowNotes` | `type: 'advice'\|'note', title, body, date, tags: string[], pinned` |
+| `shadowNotes` | `type: 'advice'\|'note', title, body, date, tags: string[], pinned, quote (для advice: показывать как послание CEO на главной и страницах; см. `motivation.js`)` |
 | `streams` | направления внутри проекта: `projectId, name, description, status: 'active'\|'paused'\|'done', order` |
 | `people` | `name, type: 'ceo'\|'team'\|'partner'\|'client'\|'other', role, org, tg, email, phone, tags: string[], notes (как работать), color` |
 | `commitments` | обязательства: `personId, direction: 'mine' (я обещала)\|'theirs' (мне обещали), title, due (date|null), notes, done, doneAt?` |
