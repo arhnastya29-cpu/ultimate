@@ -20,6 +20,7 @@ export const PAGES = [
   { id: 'learning', group: 'Знания',   title: 'Обучение',       short: 'Учёба',    icon: 'brain',     mod: () => import('./pages/learning.js') },
   { id: 'notes',    group: 'Знания',   title: 'Заметки',        short: 'Заметки',  icon: 'library',   mod: () => import('./pages/notes.js') },
   { id: 'kb',       group: 'Знания',   title: 'База знаний',    short: 'База',     icon: 'folder',    mod: () => import('./pages/kb.js') },
+  { id: 'signals',  group: 'Знания',   title: 'Сигналы',        short: 'Сигналы',  icon: 'rss',       mod: () => import('./pages/signals.js') },
   { id: 'habits',   group: 'Личное',   title: 'Привычки',       short: 'Привычки', icon: 'repeat',    mod: () => import('./pages/habits.js') },
   { id: 'journal',  group: 'Личное',   title: 'Рефлексия',      short: 'Дневник',  icon: 'pen',       mod: () => import('./pages/journal.js') },
   { id: 'health',   group: 'Личное',   title: 'Здоровье',       short: 'Здоровье', icon: 'heart',     mod: () => import('./pages/health.js') },

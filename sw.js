@@ -4,7 +4,7 @@
    Шрифты Google кэшируются по мере загрузки. Данные приложения живут в IndexedDB,
    service worker их не трогает.
    При любом изменении файлов в src/ поднимайте VERSION — старый кэш удалится. */
-const VERSION = 'lifeos-v22';
+const VERSION = 'lifeos-v23';
 const APP_SHELL = [
   "./",
   "index.html",
@@ -29,6 +29,7 @@ const APP_SHELL = [
   "src/css/people.css",
   "src/css/plan.css",
   "src/css/projects.css",
+  "src/css/signals.css",
   "src/db.js",
   "src/fx.js",
   "src/pages/calendar.js",
@@ -46,6 +47,7 @@ const APP_SHELL = [
   "src/pages/projects.js",
   "src/pages/settings.js",
   "src/pages/shadow.js",
+  "src/pages/signals.js",
   "src/pages/sleep.js",
   "src/pages/task-modal.js",
   "src/pages/today.js",
@@ -56,6 +58,7 @@ const APP_SHELL = [
   "src/motivation.js",
   "src/pages/plan.js",
   "src/pwa.js",
+  "src/signals.js",
   "src/styles.css",
   "src/sync.js",
   "src/ui.js"

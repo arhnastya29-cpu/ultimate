@@ -8,7 +8,7 @@ import { PAGES } from '../app.js';
 // Пресеты модулей: какие разделы включены в меню. Остальные остаются доступными (скрыты из меню).
 export const PRESETS = {
   minimal: { label: 'Минимальный', on: ['today', 'plan', 'notes'] },
-  work:    { label: 'Работа',      on: ['today', 'plan', 'projects', 'people', 'shadow', 'notes', 'kb', 'learning'] },
+  work:    { label: 'Работа',      on: ['today', 'plan', 'projects', 'people', 'shadow', 'notes', 'kb', 'learning', 'signals'] },
   health:  { label: 'Здоровье',    on: ['today', 'plan', 'habits', 'journal', 'health', 'workouts', 'nutrition', 'sleep'] },
   full:    { label: 'Полный',      on: PAGES.map(p => p.id) },
   custom:  { label: 'Пользовательский', on: null },

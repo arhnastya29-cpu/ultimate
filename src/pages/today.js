@@ -89,6 +89,11 @@ export async function render(root, { navigate }) {
   const WTYPE = { strength: 'Силовая', cardio: 'Кардио', mobility: 'Мобильность', other: 'Другое' };
   const projects = moduleOn('projects') ? db.all('projects').filter(p => p.status === 'active').sort((a, b) => (a.priority || 2) - (b.priority || 2) || (a.deadline || '9999').localeCompare(b.deadline || '9999')).slice(0, 3) : [];
   const ceo = ceoPerson();
+  const sigSources = moduleOn('signals') ? db.all('signalSources') : [];
+  const sigUnread = sigSources.length ? db.all('signalItems').filter(i => !i.read) : [];
+  const sigDigest = sigSources.length ? db.all('signalDigests').find(x => x.date === d) : null;
+  const sigTop = [...sigUnread].sort((a, b) => String(b.date).localeCompare(String(a.date))).slice(0, 3);
+  const sigSrcName = (id) => sigSources.find(s => s.id === id)?.name || '';
   const ceoOpen = moduleOn('shadow') && ceo ? tasks.filter(x => !x.done && x.personId === ceo.id).sort((a, b) => (a.date || '9999').localeCompare(b.date || '9999')).slice(0, 3) : [];
   const goals = db.all('goals').filter(g => g.status === 'active');
   const nearGoals = [...goals].sort((a, b) => (a.deadline || '9999').localeCompare(b.deadline || '9999')).slice(0, 3);
@@ -180,6 +185,12 @@ export async function render(root, { navigate }) {
           <div class="section-title"><h2>${icon('zap')} Совет на сегодня</h2><span class="row tiny muted" style="gap:8px">${aiProvider() === 'ollama' ? 'локальная модель' : 'Claude'}${a ? `<button type="button" class="link" data-advice-refresh>обновить</button>` : ''}</span></div>
           ${a ? `<div class="small advice-text">${esc(a.text)}</div>` : adviceBusy ? '<div class="small muted">Думаю над вашими данными…</div>' : `<div class="empty-row"><span>Помощник посмотрит задачи, события и самочувствие и предложит, с чего начать.</span><button type="button" class="btn sm" data-advice-refresh>${icon('zap')} Получить совет</button></div>`}
         </div>`; })() : '' },
+    { id: 'signals', title: 'Сигналы', col: 2, html: sigSources.length ? `<div class="card">
+          <div class="section-title"><h2>${icon('rss')} Сигналы</h2><button type="button" class="link" data-go="signals" data-params='{"tab":"${sigDigest ? 'digest' : 'feed'}"}'>${sigDigest ? 'сводка' : sigUnread.length ? `${sigUnread.length} ${plural(sigUnread.length, 'новая', 'новые', 'новых')}` : 'открыть'}</button></div>
+          ${sigDigest ? `<div class="small" style="white-space:pre-wrap;line-height:1.5">${esc(sigDigest.text.replace(/\*\*/g, '').split('\n').map(l => l.trim().replace(/^[-•*]\s+/, '· ')).filter(Boolean).slice(0, 4).join('\n'))}</div>`
+            : sigTop.length ? `<div class="sg-today-list">${sigTop.map(i => `<div class="sg-today-item"><span class="sg-src">${esc(sigSrcName(i.sourceId))}</span><span class="ellipsis">${esc(i.title)}</span></div>`).join('')}</div>${sigUnread.length > 3 ? `<div class="tiny muted" style="margin-top:6px">и ещё ${sigUnread.length - 3}</div>` : ''}`
+            : '<div class="small muted">Новых записей нет</div>'}
+        </div>` : '' },
     { id: 'attention', title: 'Требует внимания', col: 2, html: (deadlines.length || overdue.total) ? `<div class="card">
           <div class="section-title"><h2>${icon('clock')} Требует внимания</h2>${overdue.total ? `<span class="pill bad">просрочено ${overdue.total}</span>` : ''}</div>
           ${overdue.tasks.length ? `<div class="tiny bad" style="margin-bottom:8px">${icon('clock')} Просрочено задач: ${overdue.tasks.length} · <button type="button" class="link" data-go="plan" data-params='{"tab":"all"}'>разобрать</button></div>` : ''}

@@ -69,6 +69,12 @@ export async function render(root, { params, navigate, page }) {
 
 Настройки: `db.settings()` → `{ name, theme, visionStatement, notesV, unifyV (версия миграции к единым моделям), layouts (раскладки страниц), tone: 'neutral'|'support'|'business', quotes (послания вкл/выкл, по умолчанию выкл), eveningFrom, preset: 'minimal'|'work'|'health'|'full'|'custom', modules: { pageId: 'on'|'hidden'|'off' }, mobileTab ('work' или id раздела), aiFab, ceoPersonId, kcalTarget, proteinTarget, fatTarget, carbsTarget, waterTarget, sleepTarget, stepsTarget, currency, learningWeeklyMinutes }`.
 
+### Сигналы (новости)
+- `signalSources` — `{ id, name, kind: 'rss'|'telegram'|'site', url, feedUrl, tag, paused, lastFetchAt, lastError, lastCount, siteUrl, renamed }`.
+- `signalItems` — `{ id: 'sig_'+hash(источник+ссылка), sourceId, title, link, date, summary, read, saved, fetchedAt }`; удалённые попадают в tombstones и не возвращаются при обновлении.
+- `signalDigests` — `{ id, date, period, text, itemIds, provider }` — одна сводка на день.
+- Настройки: `signalsProxy` (auto | local | direct | шаблон с `{url}`), `signalsFocus`, `signalsKeepDays`, `signalsHours`.
+
 ## Единые модели и миграции (с v21)
 
 - `src/model.js` — общая доменная логика: `agendaOn(d)` (события, задачи, ожидания, дедлайны, медицина на дату), `nextEvent()`, `nextMeetingWith(personId)`, `upcomingDeadlines()`, `overdueItems()`, `addTask/toggleTask/setTaskDone`, `addNote`, `projectProgress(p)` (из задач/стримов), `goalProgress(g)` (из KR или задач), `habitStatus(h, d)` (ручная отметка или авто из данных), `checkinOn/setCheckin/sleepOn/setSleepHours/energyOn`, `addWater/addSteps/addTransaction`, `ceoPerson()/ensureCeoPerson()`, `lastContactOf(personId)` (из заметок type meeting), `tone()/quotesOn()/addressing()`, `moduleOn(pageId)`.

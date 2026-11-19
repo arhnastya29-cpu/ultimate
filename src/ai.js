@@ -180,6 +180,14 @@ export function buildContext(pageId) {
   if (notes.length) learn.push(`последние заметки (книги, статьи, подкасты): ${notes.map(n => `«${cut(n.title, 50)}»${n.sourceTitle ? ` из «${cut(n.sourceTitle, 30)}»` : ''}${(n.tags || []).length ? ` #${n.tags.slice(0, 3).join(' #')}` : ''}`).join('; ')}`);
   if (learn.length) L.push(`\n## Развитие\n` + learn.map(b => '- ' + b).join('\n'));
 
+  // Сигналы: свежие заголовки и сводка — только на странице раздела, чтобы не раздувать контекст
+  if (pageId === 'signals') {
+    const srcs = new Map(db.all('signalSources').map(x => [x.id, x.name]));
+    const recent = [...db.all('signalItems')].sort((a, b) => String(b.date).localeCompare(String(a.date))).slice(0, 30);
+    const dg = db.all('signalDigests').find(x => x.date === t);
+    if (recent.length) L.push(`\n## Сигналы (новости из источников пользователя)\n` + recent.map(i => `- [${cut(srcs.get(i.sourceId) || '?', 30)}] ${cut(i.title, 110)}${i.summary && i.summary !== i.title ? ` — ${cut(i.summary, 160)}` : ''}`).join('\n'));
+    if (dg) L.push('Сводка на сегодня:\n' + cut(dg.text, 1500));
+  }
   return L.join('\n');
 }
 
@@ -283,7 +291,7 @@ function runTool(name, input) {
 // ---------- системный промпт ----------
 function systemPrompt(pageId) {
   const s = db.settings();
-  return `Ты — личный помощник в приложении ULTIMATE, персональной системе эффективности${s.name ? ` пользователя по имени ${s.name}` : ''}. Разделы приложения: Сегодня, Календарь (события, расписание, все даты), Цели и задачи (с доской визуализации), Проекты (со стримами и задачами), Shadow (работа с CEO: его задачи, рекомендации, наблюдения), Люди (команда, партнёры, обязательства в обе стороны, журнал контактов), База знаний (разделы пользователя), Привычки, Рефлексия (дневник и недельные обзоры), Обучение, Книги, Здоровье, Тренировки, Питание, Сон, Финансы.
+  return `Ты — личный помощник в приложении ULTIMATE, персональной системе эффективности${s.name ? ` пользователя по имени ${s.name}` : ''}. Разделы приложения: Сегодня, Календарь (события, расписание, все даты), Цели и задачи (с доской визуализации), Проекты (со стримами и задачами), Shadow (работа с CEO: его задачи, рекомендации, наблюдения), Люди (команда, партнёры, обязательства в обе стороны, журнал контактов), База знаний (разделы пользователя), Привычки, Рефлексия (дневник и недельные обзоры), Обучение, Книги, Здоровье, Тренировки, Питание, Сон, Финансы, Сигналы (новости из выбранных пользователем источников и сводка по ним).
 
 Ниже дана выжимка реальных данных пользователя на сегодня. Опирайся только на неё и на то, что пользователь пишет; ничего не выдумывай. Если данных не хватает — скажи, чего именно, и задай один точный вопрос.
 
@@ -455,6 +463,46 @@ export async function askOnce(prompt, { pageId = 'today', signal } = {}) {
   return content.filter(b => b.type === 'text').map(b => b.text).join('').trim();
 }
 
+// Запрос «как есть»: без выжимки данных приложения и без инструментов — для сводки новостей и похожих задач,
+// где весь нужный текст уже в prompt. Поток текста приходит в onText.
+export async function askPlain(prompt, { system = '', onText, signal, maxTokens = 1500 } = {}) {
+  if (!aiReady()) throw new Error(aiProvider() === 'ollama' ? 'Локальная модель недоступна' : 'Ключ Claude не задан');
+  if (aiProvider() === 'ollama') {
+    const body = { model: cfg.ollamaModel || DEFAULT_CFG.ollamaModel, stream: true, options: { temperature: 0.3, num_ctx: 12288, num_predict: maxTokens }, messages: [...(system ? [{ role: 'system', content: system }] : []), { role: 'user', content: prompt }] };
+    let r;
+    try { r = await fetch(ollamaUrl() + '/api/chat', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal }); }
+    catch (e) { if (e.name === 'AbortError') throw e; ollamaOk = false; throw new Error('Локальная модель недоступна. Она работает на Mac, где установлена Ollama.'); }
+    if (!r.ok) { let msg = `Ошибка ${r.status}`; try { const j = await r.json(); msg = j?.error || msg; } catch {} throw new Error(String(msg)); }
+    let text = '', buf = ''; const reader = r.body.getReader(); const dec = new TextDecoder();
+    while (true) {
+      const { value, done } = await reader.read(); if (done) break;
+      buf += dec.decode(value, { stream: true }); let idx;
+      while ((idx = buf.indexOf('\n')) >= 0) {
+        const line = buf.slice(0, idx).trim(); buf = buf.slice(idx + 1); if (!line) continue;
+        let ev; try { ev = JSON.parse(line); } catch { continue; }
+        if (ev.error) throw new Error(ev.error);
+        if (ev.message?.content) { text += ev.message.content; onText?.(ev.message.content); }
+      }
+    }
+    return text.trim();
+  }
+  const headers = { 'content-type': 'application/json', 'x-api-key': cfg.apiKey.trim(), 'anthropic-version': API_VERSION, 'anthropic-dangerous-direct-browser-access': 'true' };
+  if (cfg.workspaceId) headers['anthropic-workspace-id'] = cfg.workspaceId.trim();
+  const r = await fetch(API_URL, { method: 'POST', headers, body: JSON.stringify({ model: cfg.model || 'claude-opus-5-5', max_tokens: maxTokens, ...(system ? { system } : {}), messages: [{ role: 'user', content: prompt }], stream: true }), signal });
+  if (!r.ok) { let msg = `Ошибка ${r.status}`; try { const j = await r.json(); msg = j?.error?.message || msg; } catch {} throw new Error(msg); }
+  let text = '', buf = ''; const reader = r.body.getReader(); const dec = new TextDecoder();
+  while (true) {
+    const { value, done } = await reader.read(); if (done) break;
+    buf += dec.decode(value, { stream: true });
+    const [events, rest] = parseSSE(buf); buf = rest;
+    for (const ev of events) {
+      if (ev.type === 'content_block_delta' && ev.delta?.type === 'text_delta') { text += ev.delta.text; onText?.(ev.delta.text); }
+      else if (ev.type === 'error') throw new Error(ev.error?.message || 'Ошибка потока');
+    }
+  }
+  return text.trim();
+}
+
 export async function testKey() {
   const r = await fetch(API_URL, {
     method: 'POST',
@@ -487,6 +535,7 @@ export function quickPrompts(pageId) {
     notes: ['Какие идеи из заметок стоит применить на этой неделе?', 'Сведи мои заметки по теме в выводы'],
     people: ['Кому я давно не писала и что обещала?', 'Какие обещания горят на этой неделе?', 'Как построить разговор с этим человеком?'],
     kb: ['Чего не хватает в базе знаний по моей роли?', 'Собери оглавление для нового раздела'],
+    signals: ['Что из новостей важно для моей работы?', 'О чём стоит рассказать CEO?', 'Сведи новости по одной теме'],
   };
   return map[pageId] || ['Что мне стоит сделать сегодня?', 'Дай три совета по моей ситуации'];
 }

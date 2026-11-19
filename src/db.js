@@ -29,6 +29,7 @@ export const COLLECTIONS = [
   'books', 'notes',
   'transactions', 'budgets', 'financeGoals',
   'journal', 'weeklyReviews',
+  'signalSources', 'signalItems', 'signalDigests',
 ];
 
 export const DEFAULT_SETTINGS = {
@@ -57,6 +58,11 @@ export const DEFAULT_SETTINGS = {
   aiFab: true,              // плавающая кнопка помощника (только при настроенном ключе)
   ceoPersonId: null,        // человек, которого показывает Shadow (по умолчанию первый type: 'ceo')
   unifyV: 0,                // версия миграции данных (см. migrate.js)
+  // --- сигналы (новости) ---
+  signalsProxy: 'auto',     // как загружать ленты: auto | local | direct | шаблон адреса с {url}
+  signalsFocus: '',         // что важно в сводке: «продукт, AI, рынок…»
+  signalsKeepDays: 14,      // сколько дней хранить непрочитанные записи
+  signalsHours: 24,         // за какой период собирать сводку
 };
 
 const DB_NAME = 'lifeos';
