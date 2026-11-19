@@ -1,0 +1,38 @@
+/* Обучение: вкладки, «Сейчас», материалы, области, карточки, статистика. */
+.learning-page .stat-line { margin-top: -6px; }
+.ln-body { gap: 12px; }
+
+/* Фильтры: переносятся строками, не обрезаются */
+.learning-page .ln-chips { flex-wrap: wrap; overflow: visible; margin: 0; padding: 0; mask-image: none; -webkit-mask-image: none; }
+.learning-page .ln-chips .chip { min-height: 36px; }
+
+/* Таймер */
+.ln-timer.running { border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); background: color-mix(in srgb, var(--accent) 6%, var(--surface)); }
+.ln-timer #timerElapsed { font-size: 15px; padding: 7px 12px; }
+
+/* Материал */
+.ln-item { align-items: flex-start; }
+.ln-title { background: none; border: 0; padding: 0; font: inherit; font-weight: 500; font-size: 13.5px; color: var(--fg); cursor: pointer; text-align: left; overflow-wrap: anywhere; }
+.ln-title:hover { color: var(--accent); }
+.ln-title:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.ln-item-actions { display: flex; flex-direction: column; gap: 6px; align-items: stretch; flex-shrink: 0; }
+.ln-item-actions .btn { justify-content: center; white-space: nowrap; }
+
+/* Область — карточка-кнопка */
+.ln-area { cursor: pointer; }
+.ln-area:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ln-areas { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+
+.learning-page .link { min-height: 24px; }
+
+@media (max-width: 860px) {
+  .learning-page .page-head .actions { display: flex; }
+  .learning-page .page-head .actions .btn { min-height: 44px; }
+  .learning-page .tabs { margin: 0 -16px 14px; padding: 0 16px; }
+  .ln-item { flex-wrap: wrap; }
+  .ln-item .main { flex-basis: 100%; }
+  .ln-item-actions { flex-direction: row; width: 100%; }
+  .ln-item-actions .btn { flex: 1 1 auto; min-height: 40px; }
+  .ln-timer .btn { min-height: 44px; }
+  .ln-areas { grid-template-columns: 1fr; }
+}

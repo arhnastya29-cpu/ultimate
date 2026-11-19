@@ -3,6 +3,46 @@ import { esc, icon, field, formRow, formData, toast, on, fmtNum, modal, fmtDate 
 import { canInstall, promptInstall, isStandalone, onInstallChange } from '../pwa.js';
 import { status as syncStatus, onChange as onSyncChange, enable as syncEnable, disable as syncDisable, syncNow } from '../sync.js';
 import { aiConfig, setAiConfig, aiReady, testKey, MODELS } from '../ai.js';
+import { PAGES } from '../app.js';
+
+// Пресеты модулей: какие разделы включены в меню. Остальные остаются доступными (скрыты из меню).
+export const PRESETS = {
+  minimal: { label: 'Минимальный', on: ['today', 'plan', 'notes'] },
+  work:    { label: 'Работа',      on: ['today', 'plan', 'projects', 'people', 'shadow', 'notes', 'kb', 'learning'] },
+  health:  { label: 'Здоровье',    on: ['today', 'plan', 'habits', 'journal', 'health', 'workouts', 'nutrition', 'sleep'] },
+  full:    { label: 'Полный',      on: PAGES.map(p => p.id) },
+  custom:  { label: 'Пользовательский', on: null },
+};
+export function applyPreset(key) {
+  const pr = PRESETS[key]; if (!pr) return;
+  if (!pr.on) { db.setSettings({ preset: 'custom' }); return; }
+  const modules = {};
+  for (const p of PAGES) if (p.id !== 'settings' && p.id !== 'today') modules[p.id] = pr.on.includes(p.id) ? 'on' : 'hidden';
+  db.setSettings({ preset: key, modules });
+}
+const MODULE_STATES = [['on', 'В меню'], ['hidden', 'Скрыт из меню'], ['off', 'Выключен']];
+
+function uiBlock(s) {
+  const people = db.all('people');
+  const modules = s.modules || {};
+  return `<form class="form" id="uiform">
+      ${formRow(
+        field({ name: 'tone', label: 'Тон обращения', type: 'select', value: s.tone || 'neutral', options: [['neutral', 'Нейтральный'], ['support', 'Поддерживающий («чемпион», подбадривания)'], ['business', 'Деловой']] }),
+        field({ name: 'eveningFrom', label: 'Вечерняя рефлексия с, часов', type: 'number', value: s.eveningFrom ?? 18, min: 12, max: 23, step: 1 }),
+      )}
+      ${field({ name: 'quotes', label: 'Показывать послания и цитаты (рекомендации CEO с пометкой «цитата»; в поддерживающем тоне — также встроенные)', type: 'checkbox', value: !!s.quotes })}
+      ${field({ name: 'aiFab', label: 'Плавающая кнопка помощника (только когда задан ключ Claude)', type: 'checkbox', value: s.aiFab !== false })}
+      <div class="divider"></div>
+      <div class="label caps">Модули и навигация</div>
+      ${formRow(
+        field({ name: 'preset', label: 'Набор модулей', type: 'select', value: s.preset || 'full', options: Object.entries(PRESETS).map(([k, v]) => [k, v.label]) }),
+        field({ name: 'mobileTab', label: 'Третья вкладка на телефоне', type: 'select', value: s.mobileTab || 'work', options: [['work', 'Работа (проекты · люди · Shadow)'], ...PAGES.filter(p => !['today', 'plan', 'settings'].includes(p.id)).map(p => [p.id, p.title])] }),
+      )}
+      ${people.length ? field({ name: 'ceoPersonId', label: 'Кого показывает Shadow', type: 'select', value: s.ceoPersonId || '', options: [['', 'Первый человек с типом «CEO / руководство»'], ...people.map(p => [p.id, p.name])] }) : ''}
+      <div class="mod-list">${PAGES.filter(p => p.id !== 'settings' && p.id !== 'today').map(p => `<label class="mod-row"><span class="row" style="gap:8px">${icon(p.icon)} ${esc(p.title)}</span><select name="mod_${p.id}" class="input" style="width:auto;padding:6px 8px">${MODULE_STATES.map(([v, l]) => `<option value="${v}" ${(modules[p.id] || 'on') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>`).join('')}</div>
+      <p class="tiny faint" style="margin-top:8px">«Скрыт из меню» — раздел открывается по ссылке и из палитры ⌘K, но не занимает место. «Выключен» — не показывается и на главной. Изменения сохраняются сразу.</p>
+    </form>`;
+}
 
 export const title = 'Настройки';
 
@@ -133,6 +173,10 @@ export async function render(root) {
           </div>
           <label class="row tiny muted" style="margin-top:10px;gap:6px"><input type="checkbox" id="mergeImport"> При импорте объединять с текущими данными, а не заменять</label>
         </div>
+        <div class="card" id="uiCard">
+          <h3>Интерфейс</h3>
+          ${uiBlock(s)}
+        </div>
         <div class="card" id="aiCard">
           <h3>Помощник (Claude)</h3>
           ${aiBlock()}
@@ -148,7 +192,8 @@ export async function render(root) {
         <div class="card">
           <h3>Горячие клавиши</h3>
           <div class="small muted stack tight">
-            <div><span class="kbd">g</span> затем <span class="kbd">t</span> — Сегодня, <span class="kbd">g</span> <span class="kbd">g</span> — Цели, <span class="kbd">g</span> <span class="kbd">h</span> — Привычки</div>
+            <div><span class="kbd">N</span> — записать (задача, событие, заметка, расход), <span class="kbd">⌘K</span> — команды, <span class="kbd">⌘J</span> — помощник</div>
+            <div><span class="kbd">g</span> затем <span class="kbd">t</span> — Сегодня, <span class="kbd">g</span> <span class="kbd">p</span> — План, <span class="kbd">g</span> <span class="kbd">h</span> — Привычки</div>
             <div><span class="kbd">g</span> <span class="kbd">l</span> — Обучение, <span class="kbd">g</span> <span class="kbd">n</span> — Питание, <span class="kbd">g</span> <span class="kbd">w</span> — Тренировки, <span class="kbd">g</span> <span class="kbd">s</span> — Сон</div>
             <div><span class="kbd">Esc</span> — закрыть окно</div>
           </div>
@@ -167,6 +212,16 @@ export async function render(root) {
     for (const k of Object.keys(d)) if (d[k] == null && typeof DEFAULT_SETTINGS[k] === 'number') d[k] = DEFAULT_SETTINGS[k];
     db.setSettings(d);
     toast('Настройки сохранены');
+  });
+
+  const uiForm = root.querySelector('#uiform');
+  uiForm.addEventListener('change', (e) => {
+    const el = e.target;
+    if (el.name === 'preset') { applyPreset(el.value); toast('Набор модулей применён'); return; }
+    if (el.name.startsWith('mod_')) { db.setSettings({ modules: { ...(db.settings().modules || {}), [el.name.slice(4)]: el.value }, preset: 'custom' }); return; }
+    if (el.type === 'checkbox') { db.setSettings({ [el.name]: el.checked }); return; }
+    if (el.name === 'eveningFrom') { db.setSettings({ eveningFrom: Number(el.value) || 18 }); return; }
+    db.setSettings({ [el.name]: el.value || null });
   });
 
   root.querySelector('#aiform').addEventListener('submit', (e) => {
@@ -218,7 +273,10 @@ export async function render(root) {
       const merge = root.querySelector('#mergeImport').checked;
       if (!merge && !confirm('Заменить все текущие данные данными из файла?')) return;
       await db.importJSON(obj, { merge });
-      toast('Данные импортированы');
+      const { runMigrations } = await import('../migrate.js');
+      const r = runMigrations();
+      const moved = r ? (r.ceoTasks + r.commitments + r.ceoNotes + r.ideas + r.contacts) : 0;
+      toast(moved ? `Данные импортированы, перенесено в единые модели: ${moved}` : 'Данные импортированы');
     } catch (e) { alert('Не удалось импортировать: ' + e.message); }
   });
   on(root, 'click', '[data-wipe]', async () => {

@@ -1,0 +1,42 @@
+/* ---------- База знаний (src/pages/kb.js) ---------- */
+
+/* Общий поиск над разделами и страницами */
+.kb-search { margin-bottom: 12px; }
+.kb-search-box { display: flex; align-items: center; gap: 8px; padding: 0 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; min-height: 44px; }
+.kb-search-box:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.kb-search-box svg { width: 16px; height: 16px; flex-shrink: 0; }
+.kb-search-box input { flex: 1; min-width: 0; border: 0; background: transparent; padding: 8px 0; font-size: 14px; color: var(--fg); outline: none; }
+
+/* Разделы: кнопки ≥ 44 px, видимый фокус */
+.kb-sec { min-height: 44px; cursor: pointer; }
+.kb-sec:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Элемент списка страниц — div с role=button */
+.kb-item { cursor: pointer; }
+.kb-item:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.kb-preview { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.4; }
+.kb-empty { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: center; text-align: center; font-size: 13.5px; }
+
+/* Фильтр по тегам: чипы переносятся строками; на телефоне при > 4 тегах сворачиваются в кнопку «Фильтр» */
+details.kb-filter { margin-top: 14px; }
+details.kb-filter > summary { list-style: none; display: none; width: auto; cursor: pointer; min-height: 44px; }
+details.kb-filter > summary::-webkit-details-marker { display: none; }
+details.kb-filter > summary svg { width: 14px; height: 14px; }
+.chips.kb-chips { flex-wrap: wrap; overflow: visible; padding: 0; margin: 0; mask-image: none; -webkit-mask-image: none; gap: 6px; }
+.chips.kb-chips .chip { white-space: normal; text-align: left; }
+
+@media (max-width: 860px) {
+  /* Разделы на телефоне — переносимые «таблетки» вместо длинного списка */
+  .kb-side .section-title { margin: 0 0 8px; }
+  .kb-sections { flex-direction: row; flex-wrap: wrap; gap: 6px; }
+  .kb-sec { width: auto; padding: 8px 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); font-size: 13px; gap: 6px; }
+  .kb-sec .grow { flex: 0 1 auto; max-width: 180px; }
+  .kb-sec.active { border-color: var(--accent); }
+  details.kb-filter.many > summary { display: inline-flex; align-items: center; gap: 6px; }
+  details.kb-filter.many[open] > summary { margin-bottom: 10px; }
+  .chips.kb-chips .chip { min-height: 44px; }
+  .kb-title { font-size: 20px; overflow-wrap: anywhere; }
+  /* Шапка открытой страницы: кнопки под заголовком, а не рядом */
+  .kb-page-head { flex-direction: column; align-items: stretch; }
+  .kb-page-actions { justify-content: flex-end; }
+}

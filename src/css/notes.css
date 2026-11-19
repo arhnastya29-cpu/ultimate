@@ -1,0 +1,66 @@
+/* ---------- Заметки (src/pages/notes.js, src/pages/ideas.js) ---------- */
+
+/* Заголовок карточки — кнопка, чтобы открывался с клавиатуры */
+button.ncard-title { background: none; border: 0; padding: 0; text-align: left; font: inherit; font-weight: 600; font-size: 15px; line-height: 1.3; color: inherit; letter-spacing: -0.01em; cursor: pointer; width: 100%; }
+button.ncard-title:hover { color: var(--accent); }
+button.ncard-title:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+
+/* Цветная полоска слева по типу заметки */
+.ncard { position: relative; }
+.ncard.ntype-idea { border-left: 3px solid var(--accent); }
+.ncard.ntype-recommendation { border-left: 3px solid var(--gold); }
+.ncard.ntype-meeting { border-left: 3px solid var(--info); }
+.ncard.ntype-insight { border-left: 3px solid var(--good); }
+.ncard.ntype-project-log { border-left: 3px solid var(--fg-3); }
+.ncard-links .pill { white-space: normal; text-align: left; line-height: 1.3; max-width: 100%; overflow-wrap: anywhere; }
+.ncard-links button.pill { border: 0; cursor: pointer; font: inherit; font-size: 11.5px; font-weight: 600; }
+.ncard-links button.pill:hover { color: var(--fg); background: var(--surface-3); }
+.ncard-links button.pill:focus-visible, .nactive button.pill:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ncard-links .pill svg, .nactive .pill svg { width: 12px; height: 12px; }
+.ncard-foot .link { display: inline-flex; align-items: center; gap: 4px; min-height: 28px; }
+.ncard-foot .link svg { width: 13px; height: 13px; }
+.ncard-foot .link.faint { color: var(--fg-3); font-weight: 500; }
+.ncard-foot .link.faint:hover { color: var(--accent); opacity: 1; }
+.ncard .tag { cursor: pointer; border: 0; font: inherit; font-size: 11px; font-weight: 600; }
+.ncard .tag.active { background: var(--accent-soft); color: var(--accent); }
+.ncard .icon-btn.sm { width: 30px; height: 30px; }
+
+/* Строка «Показано: Иван × · #тег ×» */
+.nactive { margin: -6px 0 12px; }
+.nactive button.pill { border: 0; cursor: pointer; font: inherit; font-size: 11.5px; font-weight: 600; }
+
+/* Поиск + порядок */
+.nsearch { display: flex; gap: 8px; align-items: stretch; margin-bottom: 12px; }
+.nsearch-box { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; padding: 0 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; min-height: 44px; }
+.nsearch-box:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.nsearch-box svg { width: 16px; height: 16px; flex-shrink: 0; }
+.nsearch-box input { flex: 1; min-width: 0; border: 0; background: transparent; padding: 8px 0; font-size: 14px; color: var(--fg); outline: none; }
+.nsearch select.input { width: auto; max-width: 48%; padding: 6px 10px; min-height: 44px; }
+
+/* Пустой результат фильтра */
+.nempty { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: center; text-align: center; font-size: 13.5px; }
+
+/* Фильтры: чипы переносятся строками; на телефоне при > 4 чипах сворачиваются в кнопку «Фильтр» */
+details.nfilter { margin-top: 16px; }
+details.nfilter > summary { list-style: none; display: none; width: auto; cursor: pointer; min-height: 44px; }
+details.nfilter > summary::-webkit-details-marker { display: none; }
+details.nfilter > summary svg { width: 14px; height: 14px; }
+.nfilter-body { display: flex; flex-direction: column; gap: 10px; }
+.nfilter-body .seg { align-self: flex-start; }
+.chips.nchips { flex-wrap: wrap; overflow: visible; padding: 0; margin: 0; mask-image: none; -webkit-mask-image: none; gap: 6px; }
+.chips.nchips .chip { display: inline-flex; align-items: center; gap: 5px; white-space: normal; text-align: left; }
+.chips.nchips .chip svg { width: 13px; height: 13px; }
+.chips.nchips .chip .faint { font-family: var(--font-num); font-size: 11px; }
+
+/* Форма заметки: скрытые по типу блоки */
+.nform [hidden] { display: none !important; }
+
+@media (max-width: 860px) {
+  details.nfilter.many > summary { display: inline-flex; align-items: center; gap: 6px; }
+  details.nfilter.many[open] > summary { margin-bottom: 10px; }
+  details.nfilter.many > summary .chev { transition: transform .2s; }
+  .chips.nchips .chip { min-height: 44px; }
+  .nsearch { flex-direction: column; }
+  .nsearch select.input { max-width: none; width: 100%; }
+  .ncard-links button.pill, .nactive button.pill { min-height: 32px; }
+}

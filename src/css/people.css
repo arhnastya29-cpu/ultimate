@@ -1,0 +1,79 @@
+/* ---------- Люди: список и страница человека (src/pages/people.js) ---------- */
+
+/* Поиск и фильтры */
+.people-search { padding: 8px 12px; margin-bottom: 14px; display: flex; flex-direction: column; gap: 6px; }
+.people-search-row { display: flex; align-items: center; gap: 8px; }
+.people-search-ico { display: grid; place-items: center; flex-shrink: 0; }
+.people-search-ico svg { width: 16px; height: 16px; }
+.people-search .input[data-search] { border: 0; background: transparent; padding: 6px 4px; min-width: 0; }
+.people-search .input[data-search]:focus { box-shadow: none; }
+.pfilters > summary { list-style: none; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; min-height: 44px; }
+.pfilters > summary::-webkit-details-marker { display: none; }
+.pfilters > summary svg { width: 14px; height: 14px; }
+.pfilters > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* Чипы переносятся строками и не обрезаются ни на одном экране */
+.pchips, .people-page .chips { flex-wrap: wrap; overflow: visible; margin: 0; padding: 4px 0 2px; mask-image: none; -webkit-mask-image: none; }
+.pchips .chip { min-height: 36px; }
+.chip-n { font-size: 11px; opacity: .65; margin-left: 2px; font-variant-numeric: tabular-nums; }
+/* На десктопе чипы всегда видны, кнопка «Фильтр» не нужна */
+@media (min-width: 861px) {
+  .pfilters > summary { display: none; }
+  .people-search { flex-direction: row; align-items: center; flex-wrap: wrap; }
+  .people-search-row { flex: 1 1 240px; }
+  .pchips { padding: 0; }
+}
+@media (max-width: 860px) {
+  .pchips .chip { min-height: 44px; }
+}
+
+/* Карточка человека в списке */
+.person-card.is-ceo { --pc: var(--gold); border-left-color: var(--gold); }
+.person-name { font-weight: 600; font-size: 15px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; letter-spacing: -0.01em; }
+.person-role { margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.person-facts { display: flex; flex-direction: column; gap: 4px; margin-top: 10px; }
+.person-facts > span { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.person-facts svg { width: 13px; height: 13px; flex-shrink: 0; }
+.person-card .avatar { flex-shrink: 0; }
+
+/* Строки обязательств и заметок */
+.ptask-title, .pnote-title { background: none; border: 0; padding: 0; text-align: left; color: var(--fg); font: inherit; font-weight: 500; font-size: 13.5px; cursor: pointer; line-height: 1.35; }
+.ptask-title:hover, .pnote-title:hover { color: var(--accent); }
+.ptask-title:focus-visible, .pnote-title:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.ptask.is-done .ptask-title { color: var(--fg-3); }
+.ptask-note { max-width: 240px; }
+.pnote-body { margin-top: 4px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; white-space: pre-line; line-height: 1.45; }
+.pnote-next { margin-top: 4px; display: flex; align-items: center; gap: 4px; }
+.pnote-next svg { width: 12px; height: 12px; flex-shrink: 0; }
+.pgroup + .pgroup { margin-top: 12px; }
+.pgroup-title { font-size: 12px; font-weight: 600; color: var(--fg-2); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 2px; display: flex; gap: 6px; align-items: baseline; }
+.pdone { margin-top: 10px; }
+.pdone > summary { min-height: 36px; }
+.pdone > summary svg { width: 14px; height: 14px; transition: transform .2s; }
+.pdone[open] > summary svg { transform: rotate(180deg); }
+
+/* Страница человека */
+.person-h1 { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.person-h1 .avatar { width: 40px; height: 40px; font-size: 15px; }
+.person-h1 .pill { font-size: 11px; }
+.person-meta { margin-bottom: 14px; display: flex; flex-direction: column; gap: 8px; }
+.person-meta-row { display: flex; align-items: center; gap: 8px 14px; flex-wrap: wrap; font-size: 13.5px; }
+.person-meta-label { display: inline-flex; align-items: center; gap: 6px; color: var(--fg-3); font-size: 12px; font-weight: 600; min-width: 150px; }
+.person-meta-label svg { width: 14px; height: 14px; }
+.person-meta .link { min-height: 0; }
+.pcontact { display: inline-flex; align-items: center; gap: 4px; color: var(--accent); font-weight: 500; font-size: 13px; }
+.pcontact svg { width: 13px; height: 13px; }
+.pcontact:hover { opacity: .75; }
+.person-grid { align-items: start; }
+
+/* Телефон: цели для пальца, порядок блоков */
+@media (max-width: 860px) {
+  .person-h1 { font-size: 24px; }
+  .person-meta-label { min-width: 100%; }
+  .people-page .link { min-height: 44px; display: inline-flex; align-items: center; }
+  .people-page .section-title .link { min-height: 32px; }
+  .ptask-title, .pnote-title { min-height: 24px; }
+  .ptask-note { max-width: 100%; }
+}
+
+/* Меню «•••»: в styles.css у .pmenu-list display:flex перебивает атрибут hidden — страхуем здесь */
+.people-page .pmenu-list[hidden] { display: none; }

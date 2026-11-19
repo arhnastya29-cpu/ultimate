@@ -90,6 +90,13 @@ const ICONS = {
   chevronLeft: '<path d="m15 18-6-6 6-6"/>',
   chevronRight: '<path d="m9 18 6-6-6-6"/>',
   chevronDown: '<path d="m6 9 6 6 6-6"/>',
+  chevronUp: '<path d="m18 15-6-6-6 6"/>',
+  list: '<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>',
+  filter: '<path d="M22 3H2l8 9.5V19l4 2v-8.5L22 3z"/>',
+  user: '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+  inbox: '<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5.1 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.9A2 2 0 0 0 16.8 4H7.2a2 2 0 0 0-1.7 1.1z"/>',
+  sliders: '<path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/>',
+  home: '<path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/>',
   sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
   book: '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V2H6.5A2.5 2.5 0 0 0 4 4.5v15Z"/><path d="M4 19.5A2.5 2.5 0 0 0 6.5 22H20v-5"/>',
   target: '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>',
@@ -142,6 +149,34 @@ export function progressBar(value, max = 100, cls = '') {
 }
 export function emptyState(text, emoji = '✨') {
   return `<div class="empty"><div class="big">${emoji}</div>${esc(text)}</div>`;
+}
+// Компактное пустое состояние: одна фраза о пользе + одно главное действие (+ необязательное второе).
+// emptyAction({ text, action: 'new', label: 'Создать проект', second: { action, label } })
+export function emptyAction({ text, action, label, second = null, attrs = '' }) {
+  return `<div class="empty-act">
+    <div class="empty-act-text">${esc(text)}</div>
+    <div class="row wrap" style="gap:8px;justify-content:center">
+      ${action ? `<button type="button" class="btn" data-action="${esc(action)}" ${attrs}>${icon('plus')} ${esc(label)}</button>` : ''}
+      ${second ? `<button type="button" class="btn secondary" data-action="${esc(second.action)}" ${second.attrs || ''}>${esc(second.label)}</button>` : ''}
+    </div>
+  </div>`;
+}
+// Строка сводки вместо карточек с цифрами: statLine(['3 задачи', '80 минут', ['1 просрочено', 'bad']]).
+// Пустые элементы пропускаются; если нечего показать — возвращает пустую строку.
+export function statLine(parts, cls = '') {
+  const items = parts.filter(p => p && (Array.isArray(p) ? p[0] : true)).map(p => Array.isArray(p) ? `<span class="${esc(p[1] || '')}">${p[0]}</span>` : `<span>${p}</span>`);
+  return items.length ? `<div class="stat-line ${cls}">${items.join('<i class="sep">·</i>')}</div>` : '';
+}
+// Меню «•••» в шапке: items = [{ label, action, icon?, attrs? }]. Открытие/закрытие — глобально в app.js.
+export function pageMenu(items, { label = 'Ещё' } = {}) {
+  const list = items.filter(Boolean);
+  if (!list.length) return '';
+  return `<div class="pmenu"><button type="button" class="icon-btn sm" data-pmenu aria-label="${esc(label)}" aria-haspopup="menu" aria-expanded="false">${icon('more')}</button>
+    <div class="pmenu-list" role="menu" hidden>${list.map(i => `<button type="button" role="menuitem" class="pmenu-item" data-action="${esc(i.action)}" ${i.attrs || ''}>${i.icon ? icon(i.icon) : ''}<span>${esc(i.label)}</span></button>`).join('')}</div></div>`;
+}
+// Вкладки страницы: tabs([['today','Сегодня'],['week','Неделя']], active, 'data-tab')
+export function tabs(list, active, attr = 'data-tab', cls = '') {
+  return `<div class="tabs ${cls}" role="tablist">${list.map(([v, l, n]) => `<button type="button" role="tab" class="tab ${v === active ? 'active' : ''}" aria-selected="${v === active}" ${attr}="${esc(v)}">${esc(l)}${n ? `<span class="tab-n">${n}</span>` : ''}</button>`).join('')}</div>`;
 }
 export function checkBtn(on, extra = '') {
   return `<button type="button" class="check ${on ? 'on' : ''}" ${extra} aria-pressed="${on ? 'true' : 'false'}">${icon('check')}</button>`;

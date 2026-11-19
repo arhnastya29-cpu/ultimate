@@ -1,8 +1,9 @@
 import { db } from '../db.js';
 import {
   esc, icon, modal, field, formRow, toast, today, addDays, fmtDate, fmtNum, on, dateNav,
-  ring, progressBar, barChart, emptyState, sum, lastNDays, weekdayShort, sortBy,
+  ring, progressBar, barChart, emptyState, emptyAction, statLine, pageMenu, sum, lastNDays, weekdayShort, sortBy, plural,
 } from '../ui.js';
+import { addWater } from '../model.js';
 
 export const title = 'Питание';
 
@@ -290,6 +291,12 @@ function openFoodModal(food = null) {
   });
 }
 
+// Приём пищи по времени суток — для кнопки «+ Приём пищи» в шапке.
+function mealTypeNow() {
+  const h = new Date().getHours();
+  return h < 11 ? 'breakfast' : h < 16 ? 'lunch' : h < 21 ? 'dinner' : 'snack';
+}
+
 // ---------- Рендер ----------
 export async function render(root) {
   seedFoodsIfEmpty();
@@ -329,106 +336,138 @@ export async function render(root) {
   const avgProtein = logged.length ? sum(logged, r => r.protein) / logged.length : 0;
   const proteinDays = weekRows.filter(r => r.protein >= targets.protein).length;
 
+  const stats = statLine([
+    meals.length ? `<b>${fmtNum(tot.kcal)}</b> из ${fmtNum(targets.kcal)} ккал` : '',
+    meals.length ? `Белок <b class="${proteinOk ? 'good' : ''}">${fmtNum(tot.protein)}</b> из ${fmtNum(targets.protein)} г` : '',
+    water ? `Вода <b class="${water >= targets.water ? 'good' : ''}">${fmtNum(water)}</b> из ${fmtNum(targets.water)} мл` : '',
+    steps ? `Шаги <b class="${steps >= targets.steps ? 'good' : ''}">${fmtNum(steps)}</b>` : '',
+  ]);
+
   const mealCard = ([type, label, emoji]) => {
     const list = meals.filter(m => m.mealType === type);
+    if (!list.length) return '';
     const t = totalsOf(list);
-    const hasYesterday = yMeals.some(m => m.mealType === type);
-    return `<div class="card">
-      <div class="row between top" style="margin-bottom:6px;gap:8px">
+    return `<div class="card" data-block="meal-${type}" data-block-title="${esc(label)}">
+      <div class="meal-head">
         <div>
-          <h3 style="margin:0">${emoji} ${esc(label)}</h3>
-          <div class="tiny muted">${list.length ? `${fmtNum(t.kcal)} ккал · ${fmtNum(t.protein)} г белка` : 'пока пусто'}</div>
+          <h3>${emoji} ${esc(label)}</h3>
+          <div class="tiny muted">${fmtNum(t.kcal)} ккал · ${fmtNum(t.protein)} г белка</div>
         </div>
-        <div class="row" style="gap:10px;flex-shrink:0">
-          ${hasYesterday ? `<button type="button" class="link" data-repeat="${type}" title="Скопировать вчерашние записи этого приёма">Повторить вчера</button>` : ''}
+        <div class="row">
           <button type="button" class="btn sm secondary" data-add-meal="${type}">${icon('plus')} Добавить</button>
         </div>
       </div>
-      ${list.length ? `<div class="list">${list.map(m => `<div class="list-item clickable" data-edit-meal="${esc(m.id)}">
+      <div class="list">${list.map(m => `<div class="list-item clickable" data-edit-meal="${esc(m.id)}" tabindex="0" role="button">
         <div class="main"><div class="title ellipsis">${esc(m.name)}</div><div class="sub">${fmtNum(m.grams)} г · ${macroLine(m)}</div></div>
         <div class="bold mono" style="white-space:nowrap">${fmtNum(m.kcal)} <span class="tiny muted">ккал</span></div>
-      </div>`).join('')}</div>` : ''}
+      </div>`).join('')}</div>
     </div>`;
   };
+  // Быстрое добавление: по одному чипу на приём пищи; «как вчера» — если вчера в этом приёме что-то было, а сегодня пусто.
+  const quickRow = `<div class="quick-row" data-block="quick-add" data-block-title="Быстрое добавление">
+    ${MEAL_TYPES.map(([type, label, emoji]) => `<button type="button" class="chip" data-add-meal="${type}">${icon('plus')} ${emoji} ${esc(label)}</button>`).join('')}
+    ${MEAL_TYPES.filter(([type]) => yMeals.some(m => m.mealType === type) && !meals.some(m => m.mealType === type))
+      .map(([type, label]) => `<button type="button" class="chip ghost" data-repeat="${type}" title="Скопировать вчерашние записи этого приёма">${icon('repeat')} ${esc(label)} как вчера</button>`).join('')}
+  </div>`;
 
   root.innerHTML = `
-  <div data-page="nutrition">
+  <div class="body-page" data-page="nutrition">
     <div class="page-head">
       <div><div class="eyebrow">Тело</div><h1>Питание</h1></div>
-      <div class="actions">${dateNav(day)}</div>
+      <div class="actions">
+        <div class="dnav">${dateNav(day)}</div>
+        <button type="button" class="btn" data-add-meal="${mealTypeNow()}">${icon('plus')} Приём пищи</button>
+        ${pageMenu([
+          { label: 'Продукт в библиотеку', action: 'food-add', icon: 'utensils' },
+          { label: 'Настроить страницу', action: 'customize', icon: 'sliders' },
+        ])}
+      </div>
+    </div>
+    ${stats}
+
+    <div class="grid-2" style="align-items:start">
+      <div class="stack">
+        ${meals.length ? MEAL_TYPES.map(mealCard).join('') : `<div class="card" data-block="meals-empty" data-block-title="Приёмы пищи">
+          <h3>Приёмы пищи · ${esc(fmtDate(day))}</h3>
+          ${emptyAction({ text: 'Записывайте еду: будет видно калории и белок за день и неделю', action: 'add-meal', label: 'Приём пищи', attrs: `data-add-meal="${mealTypeNow()}"` })}
+        </div>`}
+        ${quickRow}
+      </div>
+
+      <div class="stack">
+        <div class="card" data-block="water" data-block-title="Вода и шаги">
+          <div class="row between" style="margin-bottom:8px">
+            <h3 style="margin:0">Вода</h3>
+            <span class="pill ${water >= targets.water ? 'good' : ''}">${fmtNum(water)} / ${fmtNum(targets.water)} мл</span>
+          </div>
+          ${progressBar(water, targets.water, water >= targets.water ? 'good' : 'info')}
+          <div class="water-btns">
+            <button type="button" class="btn sm secondary" data-water="250">+250</button>
+            <button type="button" class="btn sm secondary" data-water="500">+500</button>
+            <button type="button" class="btn sm ghost" data-water="-250" ${water ? '' : 'disabled'}>−250</button>
+            ${water ? `<span class="tiny muted">≈ ${fmtNum(Math.round(water / 250))} ст.</span>` : ''}
+          </div>
+          <div class="divider" style="margin:14px 0"></div>
+          <div class="row between" style="gap:12px">
+            <div><div class="bold small">Шаги</div><div class="tiny muted">цель ${fmtNum(targets.steps)}</div></div>
+            <input type="number" class="input" style="width:140px" min="0" step="100" value="${steps || ''}" placeholder="0" data-steps aria-label="Шаги за день">
+          </div>
+          <div style="margin-top:8px">${progressBar(steps, targets.steps, steps >= targets.steps ? 'good' : '')}</div>
+        </div>
+
+        ${meals.length ? `<div class="card" data-block="day-total" data-block-title="Итог дня">
+          <h3>Итог дня</h3>
+          <div class="row top" style="gap:18px;flex-wrap:wrap">
+            <div style="flex-shrink:0">${ring(kcalPct, { stroke: 10, color: ringColor, label: fmtNum(tot.kcal), sub: `из ${fmtNum(targets.kcal)}` })}</div>
+            <div class="grow macro-grid">
+              ${macroRow('Белки', tot.protein, targets.protein, proteinOk ? 'good' : '', proteinOk ? '<span class="pill good">норма</span>' : '')}
+              ${macroRow('Жиры', tot.fat, targets.fat, tot.fat > targets.fat ? 'warn' : 'info')}
+              ${macroRow('Углеводы', tot.carbs, targets.carbs, tot.carbs > targets.carbs ? 'warn' : 'info')}
+            </div>
+          </div>
+          <div class="small muted" style="margin-top:12px">
+            ${leftKcal >= 0 ? `Осталось: <b>${fmtNum(leftKcal)} ккал</b>` : `Перебор: <b class="bad">${fmtNum(-leftKcal)} ккал</b>`}
+            · ${leftProtein > 0 ? `<b>${fmtNum(leftProtein)} г белка</b>` : '<b class="good">белок набран</b>'}
+          </div>
+        </div>` : ''}
+      </div>
     </div>
 
-    <div class="grid-2" style="align-items:stretch">
-      <div class="card">
-        <div class="row top" style="gap:18px;flex-wrap:wrap">
-          <div style="flex-shrink:0">${ring(kcalPct, { stroke: 10, color: ringColor, label: fmtNum(tot.kcal), sub: `из ${fmtNum(targets.kcal)}` })}</div>
-          <div class="grow stack" style="gap:10px;min-width:180px">
-            ${macroRow('Белки', tot.protein, targets.protein, proteinOk ? 'good' : '', proteinOk ? '<span class="pill good">норма</span>' : '')}
-            ${macroRow('Жиры', tot.fat, targets.fat, tot.fat > targets.fat ? 'warn' : 'info')}
-            ${macroRow('Углеводы', tot.carbs, targets.carbs, tot.carbs > targets.carbs ? 'warn' : 'info')}
+    ${logged.length ? `<details class="acc card" data-block="week" data-block-title="Последние 7 дней" style="margin-top:14px">
+      <summary><span class="icon-btn sm chev">${icon('chevronDown')}</span> Последние 7 дней <span class="sum-sub">по ${esc(fmtDate(day))} · ${logged.length} ${plural(logged.length, 'день', 'дня', 'дней')} с записями</span></summary>
+      <div class="acc-body">
+        ${statLine([
+          `В среднем <b>${fmtNum(avgKcal)}</b> ккал в день (цель ${fmtNum(targets.kcal)})`,
+          `Белок <b class="${avgProtein >= targets.protein ? 'good' : ''}">${fmtNum(avgProtein)}</b> г в день`,
+          `Дней с нормой белка: <b class="${proteinDays >= 5 ? 'good' : ''}">${proteinDays}</b> из 7`,
+        ], 'acc-stats')}
+        <div class="acc-grid">
+          <div class="card">
+            <h3>Калории по дням</h3>
+            ${barChart(weekRows.map(r => ({ label: weekdayShort(r.date), value: r.kcal, color: r.kcal > targets.kcal * 1.1 ? 'var(--bad)' : 'var(--accent)' })), { height: 130, target: targets.kcal, showValues: true })}
+            <div class="tiny faint">пунктир — цель ${fmtNum(targets.kcal)} ккал</div>
+          </div>
+          <div class="card">
+            <h3>Белок по дням</h3>
+            ${barChart(weekRows.map(r => ({ label: weekdayShort(r.date), value: r.protein, color: r.protein >= targets.protein ? 'var(--good)' : 'var(--accent)' })), { height: 130, target: targets.protein, showValues: true })}
+            <div class="tiny faint">пунктир — цель ${fmtNum(targets.protein)} г</div>
           </div>
         </div>
-        <div class="small muted" style="margin-top:12px">
-          ${leftKcal >= 0 ? `Осталось: <b>${fmtNum(leftKcal)} ккал</b>` : `Перебор: <b class="bad">${fmtNum(-leftKcal)} ккал</b>`}
-          · ${leftProtein > 0 ? `<b>${fmtNum(leftProtein)} г белка</b>` : '<b class="good">белок набран</b>'}
-        </div>
       </div>
+    </details>` : ''}
 
-      <div class="card">
-        <div class="row between" style="margin-bottom:8px">
-          <h3 style="margin:0">Вода</h3>
-          <span class="pill ${water >= targets.water ? 'good' : ''}">${fmtNum(water)} / ${fmtNum(targets.water)} мл</span>
-        </div>
-        ${progressBar(water, targets.water, water >= targets.water ? 'good' : 'info')}
-        <div class="row wrap" style="margin-top:10px;gap:6px">
-          <button type="button" class="btn sm secondary" data-water="250">+250</button>
-          <button type="button" class="btn sm secondary" data-water="500">+500</button>
-          <button type="button" class="btn sm ghost" data-water="-250">−250</button>
-          <span class="tiny muted">≈ ${fmtNum(Math.round(water / 250))} ст.</span>
-        </div>
-        <div class="divider" style="margin:14px 0"></div>
-        <div class="row between" style="gap:12px">
-          <div><div class="bold small">Шаги</div><div class="tiny muted">цель ${fmtNum(targets.steps)}</div></div>
-          <input type="number" class="input" style="width:140px" min="0" step="100" value="${steps || ''}" placeholder="0" data-steps>
-        </div>
-        <div style="margin-top:8px">${progressBar(steps, targets.steps, steps >= targets.steps ? 'good' : '')}</div>
-      </div>
-    </div>
-
-    <div class="section-title"><h2>Приёмы пищи</h2><span class="tiny muted">нажмите на запись, чтобы изменить</span></div>
-    <div class="grid-2" style="align-items:start">${MEAL_TYPES.map(mealCard).join('')}</div>
-
-    <div class="section-title"><h2>Последние 7 дней</h2><span class="tiny muted">по ${esc(fmtDate(day))}</span></div>
-    <div class="grid-3">
-      <div class="stat"><div class="label">Средние ккал</div><div class="value">${fmtNum(avgKcal)}</div><div class="sub">цель ${fmtNum(targets.kcal)} · ${logged.length ? `по ${logged.length} дн. с записями` : 'записей нет'}</div></div>
-      <div class="stat"><div class="label">Средний белок</div><div class="value ${logged.length && avgProtein >= targets.protein ? 'good' : ''}">${fmtNum(avgProtein)}<small>г</small></div><div class="sub">цель ${fmtNum(targets.protein)} г</div></div>
-      <div class="stat"><div class="label">Дней в норме по белку</div><div class="value ${proteinDays >= 5 ? 'good' : ''}">${proteinDays}<small>/ 7</small></div><div class="sub">белок ≥ ${fmtNum(targets.protein)} г</div></div>
-    </div>
-    <div class="grid-2" style="margin-top:12px">
-      <div class="card">
-        <h3>Калории по дням</h3>
-        ${barChart(weekRows.map(r => ({ label: weekdayShort(r.date), value: r.kcal, color: r.kcal > targets.kcal * 1.1 ? 'var(--bad)' : 'var(--accent)' })), { height: 130, target: targets.kcal, showValues: true })}
-        <div class="tiny faint">пунктир — цель ${fmtNum(targets.kcal)} ккал</div>
-      </div>
-      <div class="card">
-        <h3>Белок по дням</h3>
-        ${barChart(weekRows.map(r => ({ label: weekdayShort(r.date), value: r.protein, color: r.protein >= targets.protein ? 'var(--good)' : 'var(--accent)' })), { height: 130, target: targets.protein, showValues: true })}
-        <div class="tiny faint">пунктир — цель ${fmtNum(targets.protein)} г</div>
-      </div>
-    </div>
-
-    <details class="acc card" ${libOpen ? 'open' : ''} data-lib style="margin-top:12px">
-      <summary><span class="icon-btn sm" style="pointer-events:none">${icon('chevronDown')}</span> Библиотека продуктов <span class="pill">${foods.length}</span></summary>
-      <div style="margin-top:12px">
-        <div class="row" style="margin-bottom:10px">
-          <input type="search" class="input grow" placeholder="Поиск по названию" value="${esc(libSearch)}" data-lib-search>
-          <button type="button" class="btn sm secondary" data-food-add>${icon('plus')} Продукт</button>
+    <details class="acc card" ${libOpen ? 'open' : ''} data-lib data-block="library" data-block-title="Библиотека продуктов" style="margin-top:14px">
+      <summary><span class="icon-btn sm chev">${icon('chevronDown')}</span> Библиотека продуктов <span class="pill">${foods.length}</span></summary>
+      <div class="acc-body">
+        <div class="row" style="gap:8px">
+          <input type="search" class="input grow" placeholder="Поиск по названию" value="${esc(libSearch)}" data-lib-search aria-label="Поиск продукта">
+          <button type="button" class="btn sm secondary" data-action="food-add">${icon('plus')} Продукт</button>
         </div>
         <div class="scroll-x"><table class="tbl">
           <thead><tr><th>Продукт</th><th class="num">Ккал</th><th class="num">Белки</th><th class="num">Жиры</th><th class="num">Углев.</th><th class="num">Порция</th></tr></thead>
           <tbody data-lib-body>${libRows(foods, libSearch)}</tbody>
         </table></div>
-        <div class="tiny faint" style="margin-top:6px">Значения на 100 г. Нажмите на строку, чтобы изменить или удалить.</div>
+        <div class="tiny faint">Значения на 100 г. Нажмите на строку, чтобы изменить или удалить.</div>
       </div>
     </details>
   </div>`;
@@ -447,10 +486,13 @@ export async function render(root) {
   });
   on(page, 'change', '[data-dn="pick"]', (e, t) => { if (t.value) { day = t.value; rerender(); } });
 
-  // Вода и шаги
+  // Вода (через model.addWater — единый источник dayLogs.waterMl) и шаги
   on(page, 'click', '[data-water]', (e, t) => {
-    const delta = Number(t.dataset.water) || 0;
-    patchDayLog(day, l => ({ waterMl: Math.max(0, (Number(l.waterMl) || 0) + delta) }));
+    let delta = Number(t.dataset.water) || 0;
+    const cur = Number((dayLog(day) || {}).waterMl) || 0;
+    if (delta < 0) delta = Math.max(delta, -cur);
+    if (!delta) return;
+    addWater(delta, day);
   });
   on(page, 'change', '[data-steps]', (e, t) => {
     const v = Math.max(0, Math.round(Number(t.value) || 0));
@@ -463,6 +505,7 @@ export async function render(root) {
     const entry = db.get('meals', t.dataset.editMeal);
     if (entry) openMealModal({ mealType: entry.mealType, entry });
   });
+  on(page, 'keydown', '[data-edit-meal]', (e, t) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); t.click(); } });
   on(page, 'click', '[data-repeat]', (e, t) => {
     const type = t.dataset.repeat;
     const src = db.where('meals', m => m.date === yesterday && m.mealType === type);
@@ -471,7 +514,7 @@ export async function render(root) {
       const { id, createdAt, updatedAt, ...rest } = m;
       db.add('meals', { ...rest, date: day });
     }
-    toast(`Скопировано: ${src.length} ${src.length === 1 ? 'запись' : src.length < 5 ? 'записи' : 'записей'}`);
+    toast(`Скопировано: ${src.length} ${plural(src.length, 'запись', 'записи', 'записей')}`);
   });
 
   // Библиотека
@@ -481,7 +524,7 @@ export async function render(root) {
     libSearch = t.value;
     page.querySelector('[data-lib-body]').innerHTML = libRows(sortedFoods(), libSearch);
   });
-  on(page, 'click', '[data-food-add]', () => openFoodModal());
+  on(page, 'click', '[data-action="food-add"]', () => openFoodModal());
   on(page, 'click', '[data-food-edit]', (e, t) => {
     const f = db.get('foods', t.dataset.foodEdit);
     if (f) openFoodModal(f);

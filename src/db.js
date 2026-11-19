@@ -46,6 +46,17 @@ export const DEFAULT_SETTINGS = {
   currency: '₽',
   weekStartsMonday: true,
   learningWeeklyMinutes: 300,
+  // --- тон и шум ---
+  tone: 'neutral',          // neutral | support | business — обращение и стиль сообщений
+  quotes: false,            // показывать послания/цитаты (рекомендации CEO с пометкой или встроенные)
+  eveningFrom: 18,          // час, с которого на главной появляется вечерняя рефлексия
+  // --- модули и навигация ---
+  preset: 'full',           // minimal | work | health | full | custom
+  modules: {},              // { pageId: 'on' | 'off' | 'hidden' } — off: раздел выключен; hidden: скрыт из меню
+  mobileTab: 'work',        // третий слот нижней панели: 'work' (хаб «Работа») или id раздела
+  aiFab: true,              // плавающая кнопка помощника (только при настроенном ключе)
+  ceoPersonId: null,        // человек, которого показывает Shadow (по умолчанию первый type: 'ceo')
+  unifyV: 0,                // версия миграции данных (см. migrate.js)
 };
 
 const DB_NAME = 'lifeos';
@@ -155,7 +166,8 @@ class Store {
   add(col, obj) {
     this._check(col);
     const now = new Date().toISOString();
-    const rec = { id: uid(), createdAt: now, updatedAt: now, ...obj };
+    const clean = Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== undefined));   // undefined не должен затирать id/createdAt
+    const rec = { id: uid(), createdAt: now, updatedAt: now, ...clean };
     this.data[col] = [...this.data[col], rec];
     this._persist(col); this._emit(col);
     return rec;

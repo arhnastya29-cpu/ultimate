@@ -1,14 +1,20 @@
+// Привычки: сегодняшний список → неделя → серии → статистика (раскрывается).
+// Выполнение считается через model.js (habitStatus учитывает ручные отметки и данные дня).
 import { db } from '../db.js';
 import {
   esc, icon, modal, field, formRow, toast, on,
-  today, addDays, parseISO, fmtDate, weekDays, startOfWeek, lastNDays, weekdayShort, dateNav,
-  checkBtn, ring, emptyState, plural,
+  today, addDays, fmtDate, weekDays, startOfWeek, lastNDays, weekdayShort, dateNav,
+  checkBtn, emptyAction, statLine, pageMenu, plural,
 } from '../ui.js';
+import { HABIT_AUTO, habitStatus, habitScheduled, habitTarget, setHabitCount } from '../model.js';
+import { habitCheer } from '../motivation.js';
 
 export const title = 'Привычки';
 
 // ---------- Локальное состояние ----------
 let day = today();
+let statsOpen = false;
+let archiveOpen = false;
 
 // ---------- Справочники ----------
 const WD = ['пн', 'вт', 'ср', 'чт', 'пт', 'сб', 'вс'];
@@ -21,14 +27,16 @@ const SEED = [
   { name: 'Медитация', icon: '🧘', color: 'var(--c6)' },
 ];
 const SEED_FLAG = 'lifeos_habitsSeeded';
+// Подписи к полю нормы для автоматических привычек.
+const AUTO_TARGET = {
+  water: { label: 'Норма, мл', hint: 'Пусто — норма из настроек', step: 100 },
+  steps: { label: 'Норма, шагов', hint: 'Пусто — норма из настроек', step: 500 },
+  study: { label: 'Норма, минут', hint: 'Пусто — достаточно любого занятия', step: 5 },
+  sleep: { label: 'Норма, часов', hint: 'Пусто — норма из настроек', step: 0.5 },
+};
 
 const dayWord = (n) => plural(n, 'день', 'дня', 'дней');
-
-// ---------- Вычисления ----------
-const weekdayIdx = (dateIso) => (parseISO(dateIso).getDay() + 6) % 7; // 0 = пн
-const targetOf = (h) => Math.max(1, Number(h.target) || 1);
-const isScheduled = (h, dateIso) => !(Array.isArray(h.days) && h.days.length) || h.days.includes(weekdayIdx(dateIso));
-const key = (habitId, dateIso) => `${habitId}|${dateIso}`;
+const habitWord = (n) => plural(n, 'привычка', 'привычки', 'привычек');
 
 function seedIfEmpty() {
   if (db.all('habits').length) return;
@@ -39,31 +47,26 @@ function seedIfEmpty() {
   try { localStorage.setItem(SEED_FLAG, '1'); } catch { /* приватный режим — не критично */ }
 }
 
-function buildCounts() {
-  const m = new Map();
-  for (const l of db.all('habitLogs')) {
-    const k = key(l.habitId, l.date);
-    m.set(k, Math.max(m.get(k) || 0, Number(l.count) || 0));
-  }
-  return m;
-}
-
-function setCount(habitId, dateIso, count) {
-  const ex = db.all('habitLogs').find(l => l.habitId === habitId && l.date === dateIso);
-  if (count <= 0) { if (ex) db.remove('habitLogs', ex.id); return; }
-  if (ex) db.update('habitLogs', ex.id, { count });
-  else db.add('habitLogs', { habitId, date: dateIso, count });
+// Кэш статусов на время одного рендера: habitStatus за каждый день для каждой привычки.
+function makeStatus() {
+  const logs = db.all('habitLogs');
+  const byHabit = new Map();
+  for (const l of logs) { if (!byHabit.has(l.habitId)) byHabit.set(l.habitId, []); byHabit.get(l.habitId).push(l); }
+  const memo = new Map();
+  return (h, d) => {
+    const k = `${h.id}|${d}`;
+    if (!memo.has(k)) memo.set(k, habitStatus(h, d, byHabit.get(h.id) || []));
+    return memo.get(k);
+  };
 }
 
 // Текущая серия: подряд выполненные запланированные дни до endIso включительно.
 // Если сам endIso ещё не выполнен — он не ломает серию (день ещё идёт).
-function currentStreak(h, counts, endIso) {
-  const tg = targetOf(h);
+function currentStreak(h, status, endIso) {
   let s = 0, d = endIso;
   for (let i = 0; i < 400; i++) {
-    if (isScheduled(h, d)) {
-      const c = counts.get(key(h.id, d)) || 0;
-      if (c >= tg) s++;
+    if (habitScheduled(h, d)) {
+      if (status(h, d).done) s++;
       else if (d !== endIso) break;
     }
     d = addDays(d, -1);
@@ -71,22 +74,37 @@ function currentStreak(h, counts, endIso) {
   return s;
 }
 
-function bestStreak(h, counts, endIso) {
-  const tg = targetOf(h);
+function bestStreak(h, status, endIso) {
   let best = 0, run = 0;
   for (const d of lastNDays(365, endIso)) {
-    if (!isScheduled(h, d)) continue;
-    if ((counts.get(key(h.id, d)) || 0) >= tg) { run++; if (run > best) best = run; }
+    if (!habitScheduled(h, d)) continue;
+    if (status(h, d).done) { run++; if (run > best) best = run; }
     else run = 0;
   }
   return best;
 }
 
+// Серия дней, когда выполнены все запланированные привычки (сегодня не ломает серию).
+function allDoneStreak(active, status, endIso) {
+  let s = 0, d = endIso;
+  for (let i = 0; i < 400; i++) {
+    const sch = active.filter(h => habitScheduled(h, d));
+    if (sch.length) {
+      if (sch.every(h => status(h, d).done)) s++;
+      else if (d !== endIso) break;
+    }
+    d = addDays(d, -1);
+  }
+  return s;
+}
+
 // ---------- Модалка ----------
 export function openHabitModal(habit, nextOrder) {
   const isNew = !habit;
-  const x = habit || { name: '', icon: '✅', color: 'var(--c1)', days: [], target: 1, archived: false };
+  const x = habit || { name: '', icon: '✅', color: 'var(--c1)', days: [], target: 1, archived: false, auto: null };
   const days = Array.isArray(x.days) ? x.days : [];
+  const auto = x.auto && x.auto.kind ? x.auto : { kind: '', target: '', keyword: '' };
+  const autoOptions = [['', 'Нет — отмечаю вручную'], ...Object.entries(HABIT_AUTO).map(([k, v]) => [k, `${v.icon} ${v.label}`])];
   modal({
     title: isNew ? 'Новая привычка' : 'Привычка',
     body: `<div class="form">
@@ -98,15 +116,52 @@ export function openHabitModal(habit, nextOrder) {
       )}
       <div class="field">
         <label>Дни недели</label>
-        <div class="row wrap" style="gap:10px">
-          ${WD.map((w, i) => `<label class="row" style="gap:4px;font-size:13px"><input type="checkbox" name="d${i}" ${days.includes(i) ? 'checked' : ''}> ${w}</label>`).join('')}
+        <div class="row wrap hb-days">
+          ${WD.map((w, i) => `<label class="row"><input type="checkbox" name="d${i}" ${days.includes(i) ? 'checked' : ''}> ${w}</label>`).join('')}
         </div>
         <div class="hint">Ничего не отмечено — ежедневно</div>
       </div>
+      <div class="hb-auto" data-auto-block>
+        <div class="label" style="margin-bottom:8px">Выполняется автоматически</div>
+        ${field({ name: 'autoKind', label: 'Из каких данных', type: 'select', value: auto.kind || '', options: autoOptions, hint: 'Привычка отметится сама, когда в приложении появятся нужные данные за день' })}
+        <div data-auto-target ${AUTO_TARGET[auto.kind] ? '' : 'hidden'}>
+          ${field({ name: 'autoTarget', label: AUTO_TARGET[auto.kind]?.label || 'Норма', type: 'number', value: auto.target ?? '', min: 0, hint: AUTO_TARGET[auto.kind]?.hint || '' })}
+        </div>
+        <div data-auto-keyword ${auto.kind === 'task' ? '' : 'hidden'}>
+          ${field({ name: 'autoKeyword', label: 'Слово в названии задачи', value: auto.keyword || '', placeholder: 'Например, отчёт', hint: 'Привычка выполнена, если за день закрыта задача с этим словом' })}
+        </div>
+      </div>
       ${isNew ? '' : field({ name: 'archived', label: 'В архиве (не показывать в списке дня)', type: 'checkbox', value: !!x.archived })}
     </div>`,
+    onOpen: (wrap) => {
+      const sel = wrap.querySelector('[name="autoKind"]');
+      const tgBox = wrap.querySelector('[data-auto-target]');
+      const kwBox = wrap.querySelector('[data-auto-keyword]');
+      const sync = () => {
+        const k = sel.value;
+        const cfg = AUTO_TARGET[k];
+        tgBox.hidden = !cfg;
+        kwBox.hidden = k !== 'task';
+        if (cfg) {
+          tgBox.querySelector('label').textContent = cfg.label;
+          const hint = tgBox.querySelector('.hint'); if (hint) hint.textContent = cfg.hint;
+        }
+      };
+      sel.addEventListener('change', sync);
+    },
     onSubmit: (d) => {
       const picked = WD.map((_, i) => i).filter(i => d[`d${i}`]);
+      const kind = d.autoKind || '';
+      let autoPatch = null;
+      if (kind && HABIT_AUTO[kind]) {
+        autoPatch = { kind };
+        if (AUTO_TARGET[kind] && d.autoTarget != null && Number(d.autoTarget) > 0) autoPatch.target = Number(d.autoTarget);
+        if (kind === 'task') {
+          const kw = String(d.autoKeyword || '').trim();
+          if (!kw) { toast('Укажите слово, по которому искать задачу'); return false; }
+          autoPatch.keyword = kw;
+        }
+      }
       const patch = {
         name: d.name,
         icon: (d.icon || '✅').trim() || '✅',
@@ -114,8 +169,9 @@ export function openHabitModal(habit, nextOrder) {
         days: picked.length === 7 ? [] : picked,
         target: Math.max(1, Number(d.target) || 1),
         archived: !!d.archived,
+        auto: autoPatch,
       };
-      if (isNew) { db.add('habits', { ...patch, order: nextOrder }); toast('Привычка добавлена'); }
+      if (isNew) { db.add('habits', { ...patch, order: nextOrder ?? db.all('habits').length }); toast('Привычка добавлена'); }
       else { db.update('habits', x.id, patch); toast('Сохранено'); }
     },
     onDelete: isNew ? undefined : () => {
@@ -127,53 +183,69 @@ export function openHabitModal(habit, nextOrder) {
 }
 
 // ---------- Фрагменты ----------
-function habitRow(h, counts, week, t) {
-  const tg = targetOf(h);
-  const c = counts.get(key(h.id, day)) || 0;
-  const done = c >= tg;
-  const streak = currentStreak(h, counts, day);
-  const dots = week.map(d => {
-    const sch = isScheduled(h, d);
-    const on = sch && (counts.get(key(h.id, d)) || 0) >= tg;
-    return `<i class="${on ? 'on' : ''} ${d === t ? 'today' : ''}" style="${sch ? '' : 'opacity:.35'}" title="${esc(fmtDate(d, { relative: false }))}">${weekdayShort(d)}</i>`;
-  }).join('');
-  const daysLabel = Array.isArray(h.days) && h.days.length ? h.days.map(i => WD[i]).filter(Boolean).join(', ') : 'ежедневно';
-  return `<div class="list-item">
-    <span class="color-dot" style="background:${esc(h.color || 'var(--c1)')}"></span>
-    <span style="font-size:22px;line-height:1;width:28px;text-align:center">${esc(h.icon || '✅')}</span>
+function habitRow(h, st) {
+  const tg = st.target;
+  const auto = st.auto;
+  const autoDone = !!auto?.done;
+  const autoIcon = h.auto?.kind && HABIT_AUTO[h.auto.kind] ? HABIT_AUTO[h.auto.kind].icon : '';
+  const daysLabel = Array.isArray(h.days) && h.days.length ? h.days.map(i => WD[i]).filter(Boolean).join(', ') : '';
+  const parts = [];
+  if (auto) parts.push(`<span class="${autoDone ? 'good' : ''}">из данных: ${autoIcon} ${esc(auto.text)}</span>`);
+  else if (tg > 1) parts.push(`<b class="${st.done ? 'good' : ''}">${st.manual}/${tg}</b> за день`);
+  if (daysLabel) parts.push(esc(daysLabel));
+  return `<div class="list-item hb-row ${st.done ? 'done' : ''}">
+    ${checkBtn(st.done, `data-action="toggle" data-id="${esc(h.id)}" aria-label="${st.done ? 'Снять отметку' : 'Выполнено'}: ${esc(h.name)}" ${autoDone && st.manual < tg ? 'disabled title="Отмечено автоматически из данных дня"' : ''}`)}
+    <span class="hb-ico" style="--dot:${esc(h.color || 'var(--c1)')}">${esc(h.icon || '✅')}</span>
     <div class="main">
-      <div class="title" data-action="edit" data-id="${esc(h.id)}" style="cursor:pointer">${esc(h.name)}</div>
-      <div class="sub">${streak ? `🔥 ${streak} ${dayWord(streak)} подряд` : 'серия не начата'} · ${esc(daysLabel)}${tg > 1 ? ` · <b class="${done ? 'good' : ''}">${c}/${tg}</b>` : ''}</div>
+      <button type="button" class="title hb-title" data-action="edit" data-id="${esc(h.id)}">${esc(h.name)}</button>
+      ${parts.length ? `<div class="sub">${parts.join(' · ')}</div>` : ''}
     </div>
-    <div class="week-dots">${dots}</div>
-    ${tg > 1 ? `<button type="button" class="btn sm secondary" data-action="plus" data-id="${esc(h.id)}" ${done ? 'disabled' : ''}>+1</button>` : ''}
-    ${checkBtn(done, `data-action="toggle" data-id="${esc(h.id)}" aria-label="Выполнено"`)}
+    ${tg > 1 && !autoDone ? `<button type="button" class="btn sm secondary" data-action="plus" data-id="${esc(h.id)}" ${st.done ? 'disabled' : ''} aria-label="Добавить одно выполнение: ${esc(h.name)}">+1</button>` : ''}
   </div>`;
 }
 
-function historyCard(h, counts, t) {
-  const tg = targetOf(h);
+function weekStrip(active, status, week, t) {
+  return `<div class="hb-week" role="group" aria-label="Прогресс недели">${week.map(d => {
+    const sch = active.filter(h => habitScheduled(h, d));
+    const done = sch.filter(h => status(h, d).done).length;
+    const future = d > t;
+    const pct = sch.length ? Math.round(done / sch.length * 100) : 0;
+    const cls = [d === day ? 'sel' : '', d === t ? 'today' : '', future ? 'future' : '', sch.length && done === sch.length ? 'full' : ''].filter(Boolean).join(' ');
+    const label = `${fmtDate(d, { weekday: true })}: ${done} из ${sch.length}`;
+    return `<button type="button" class="hb-day ${cls}" data-day="${d}" aria-label="${esc(label)}" aria-pressed="${d === day}" title="${esc(label)}">
+      <span class="hb-day-n">${esc(weekdayShort(d))}</span>
+      <span class="hb-day-bar"><i style="height:${future ? 0 : pct}%"></i></span>
+      <span class="hb-day-v">${future ? '' : sch.length ? `${done}/${sch.length}` : '—'}</span>
+    </button>`;
+  }).join('')}</div>`;
+}
+
+function heatmap(h, status, t) {
+  const tg = habitTarget(h);
   const start = startOfWeek(addDays(t, -77)); // 12 недель, последняя — текущая
   let done = 0, sched = 0;
   const cells = [];
   for (let i = 0; i < 84; i++) {
     const d = addDays(start, i);
     const future = d > t;
-    const sch = isScheduled(h, d);
-    const c = counts.get(key(h.id, d)) || 0;
-    let lvl = '';
-    if (!future && c > 0) { const r = c / tg; lvl = r >= 1 ? 'l3' : r >= 0.5 ? 'l2' : 'l1'; }
-    if (!future && sch) { sched++; if (c >= tg) done++; }
+    const sch = habitScheduled(h, d);
+    let lvl = '', c = 0;
+    if (!future) {
+      const st = status(h, d);
+      c = st.done ? tg : st.manual;
+      if (c > 0) { const r = c / tg; lvl = r >= 1 ? 'l3' : r >= 0.5 ? 'l2' : 'l1'; }
+      if (sch) { sched++; if (st.done) done++; }
+    }
     const style = future ? 'opacity:.25' : sch ? '' : 'opacity:.5';
     cells.push(`<i class="${lvl}" style="${style}" title="${esc(fmtDate(d, { relative: false }))}: ${c}/${tg}"></i>`);
   }
   const pct = sched ? Math.round(done / sched * 100) : 0;
-  return `<div class="card">
+  return `<div class="hb-heat">
     <div class="row between wrap">
       <div class="row" style="gap:8px"><span style="font-size:18px">${esc(h.icon || '✅')}</span><b>${esc(h.name)}</b></div>
       <span class="tiny muted">${done} из ${sched} · ${pct}%</span>
     </div>
-    <div class="scroll-x" style="margin-top:10px"><div class="hgrid" style="--accent:${esc(h.color || 'var(--c1)')}">${cells.join('')}</div></div>
+    <div class="scroll-x" style="margin-top:8px"><div class="hgrid" style="--accent:${esc(h.color || 'var(--c1)')}">${cells.join('')}</div></div>
   </div>`;
 }
 
@@ -186,79 +258,114 @@ export async function render(root, ctx) {
     ((a.order ?? 0) - (b.order ?? 0)) || String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
   const active = all.filter(h => !h.archived);
   const archived = all.filter(h => h.archived);
-  const counts = buildCounts();
-  const cnt = (h, d) => counts.get(key(h.id, d)) || 0;
+  const status = makeStatus();
 
-  const scheduled = active.filter(h => isScheduled(h, day));
-  const notToday = active.filter(h => !isScheduled(h, day));
-  const doneToday = scheduled.filter(h => cnt(h, day) >= targetOf(h)).length;
-  const pct = scheduled.length ? Math.round(doneToday / scheduled.length * 100) : 0;
-
-  let best = { n: 0, h: null };
-  for (const h of active) { const n = bestStreak(h, counts, t); if (n > best.n) best = { n, h }; }
-
-  let s30 = 0, d30 = 0;
-  for (const d of lastNDays(30, t)) for (const h of active) if (isScheduled(h, d)) { s30++; if (cnt(h, d) >= targetOf(h)) d30++; }
-  const pct30 = s30 ? Math.round(d30 / s30 * 100) : 0;
+  const scheduled = active.filter(h => habitScheduled(h, day));
+  const notToday = active.filter(h => !habitScheduled(h, day));
+  const doneToday = scheduled.filter(h => status(h, day).done).length;
   const week = weekDays(day);
 
-  root.innerHTML = `<div>
-    <div class="page-head">
-      <div><div class="eyebrow">Главное</div><h1>Привычки</h1></div>
-      <div class="actions">${dateNav(day)}<button class="btn" data-action="new">${icon('plus')} Привычка</button></div>
-    </div>
-    <div class="grid-3" style="margin-bottom:12px">
-      <div class="stat">
-        <div class="row" style="gap:14px">
-          ${ring(pct, { label: `${doneToday}/${scheduled.length}`, sub: 'выполнено', color: pct >= 100 ? 'var(--good)' : 'var(--accent)' })}
-          <div>
-            <div class="label">${day === t ? 'Сегодня' : esc(fmtDate(day))}</div>
-            <div class="value">${pct}<small>%</small></div>
-            <div class="sub">${scheduled.length} ${plural(scheduled.length, 'привычка', 'привычки', 'привычек')} в плане</div>
-          </div>
-        </div>
-      </div>
-      <div class="stat">
-        <div class="label">Лучшая серия</div>
-        <div class="value">${best.n}<small>${dayWord(best.n)}</small></div>
-        <div class="sub ellipsis">${best.h ? esc(`${best.h.icon || ''} ${best.h.name}`.trim()) : 'за последний год'}</div>
-      </div>
-      <div class="stat">
-        <div class="label">За 30 дней</div>
-        <div class="value">${pct30}<small>%</small></div>
-        <div class="sub">${d30} из ${s30} отметок</div>
-      </div>
-    </div>
+  // Серии
+  const streaks = active.map(h => ({ h, n: currentStreak(h, status, day) })).filter(x => x.n > 0).sort((a, b) => b.n - a.n);
+  const allStreak = allDoneStreak(active, status, day);
 
-    <div class="card" style="margin-bottom:12px">
+  const menu = pageMenu([
+    archived.length ? { label: `Архив (${archived.length})`, action: 'archive', icon: 'inbox' } : null,
+    { label: 'Настроить страницу', action: 'customize', icon: 'sliders' },
+  ]);
+
+  // Пустое состояние: одна фраза, одно действие.
+  if (!active.length && !archived.length) {
+    root.innerHTML = `<div class="habits-page">
+      <div class="page-head">
+        <div><div class="eyebrow">Личное</div><h1>Привычки</h1></div>
+        <div class="actions">${menu}</div>
+      </div>
+      ${emptyAction({ text: 'Маленькие ежедневные действия: отмечайте их одной галочкой, а вода, сон и тренировки могут отмечаться сами.', action: 'new', label: 'Привычка' })}
+    </div>`;
+    bind(root, ctx, { all, status, rerender });
+    return;
+  }
+
+  // Статистика (внутри раскрываемого блока)
+  let best = { n: 0, h: null };
+  let s30 = 0, d30 = 0;
+  const statsHtml = () => {
+    for (const h of active) { const n = bestStreak(h, status, t); if (n > best.n) best = { n, h }; }
+    for (const d of lastNDays(30, t)) for (const h of active) if (habitScheduled(h, d)) { s30++; if (status(h, d).done) d30++; }
+    const pct30 = s30 ? Math.round(d30 / s30 * 100) : 0;
+    const line = statLine([
+      d30 ? `за 30 дней <b>${d30} из ${s30}</b> · ${pct30}%` : '',
+      best.n ? `лучшая серия <b>${best.n} ${dayWord(best.n)}</b> — ${esc(`${best.h.icon || ''} ${best.h.name}`.trim())}` : '',
+    ]);
+    return `${line || '<div class="tiny muted" style="margin-bottom:10px">Отметок за последние 30 дней ещё нет</div>'}
+      <div class="tiny faint" style="margin-bottom:8px">Последние 12 недель · столбец = неделя, пн–вс сверху вниз</div>
+      <div class="stack">${active.map(h => heatmap(h, status, t)).join('')}</div>`;
+  };
+
+  root.innerHTML = `<div class="habits-page">
+    <div class="page-head">
+      <div><div class="eyebrow">Личное</div><h1>Привычки</h1></div>
+      <div class="actions">
+        <div class="dn-compact">${dateNav(day)}</div>
+        <button type="button" class="btn" data-action="new">${icon('plus')} Привычка</button>
+        ${menu}
+      </div>
+    </div>
+    ${statLine([
+      doneToday ? `<b>${doneToday} из ${scheduled.length}</b> ${day === t ? 'сегодня' : esc(fmtDate(day))}` : '',
+      allStreak ? `серия <b>${allStreak} ${dayWord(allStreak)}</b>` : '',
+    ])}
+
+    <section class="card" data-block="today" data-block-title="Список дня">
       <div class="section-title">
         <h2>${day === t ? 'Сегодня' : esc(fmtDate(day, { weekday: true }))}</h2>
-        <span class="tiny muted">${doneToday} из ${scheduled.length}</span>
+        ${scheduled.length ? `<span class="tiny muted">${doneToday === scheduled.length ? 'все выполнены' : `${doneToday} из ${scheduled.length}`}</span>` : ''}
       </div>
       ${scheduled.length
-        ? `<div class="list">${scheduled.map(h => habitRow(h, counts, week, t)).join('')}</div>`
-        : (active.length ? emptyState('На этот день привычек не запланировано', '🌤️') : emptyState('Привычек пока нет — добавьте первую', '🌱'))}
+        ? `<div class="list">${scheduled.map(h => habitRow(h, status(h, day))).join('')}</div>`
+        : active.length
+          ? `<div class="tiny muted">На этот день привычек не запланировано.</div>`
+          : emptyAction({ text: 'Все привычки в архиве.', action: 'new', label: 'Привычка', second: { action: 'archive', label: 'Открыть архив' } })}
       ${notToday.length ? `<div class="tiny faint" style="margin-top:10px">Не в этот день: ${notToday.map(h => esc(h.name)).join(', ')}</div>` : ''}
-    </div>
+    </section>
 
-    <div class="section-title"><h2>История</h2><span class="tiny muted">последние 12 недель · столбец = неделя, пн–вс сверху вниз</span></div>
-    ${active.length ? `<div class="stack">${active.map(h => historyCard(h, counts, t)).join('')}</div>` : emptyState('История появится после первых отметок', '📈')}
+    ${active.length ? `<section class="card" data-block="week" data-block-title="Неделя">
+      <div class="section-title"><h2>Неделя</h2><span class="tiny muted">${esc(fmtDate(week[0], { relative: false }))} — ${esc(fmtDate(week[6], { relative: false }))}</span></div>
+      ${weekStrip(active, status, week, t)}
+    </section>` : ''}
 
-    ${archived.length ? `<div class="card" style="margin-top:12px">
-      <details class="acc">
-        <summary>Архив <span class="pill">${archived.length}</span></summary>
-        <div class="list" style="margin-top:8px">
+    ${streaks.length ? `<section class="card" data-block="streaks" data-block-title="Серии">
+      <div class="section-title"><h2>Серии</h2><span class="tiny muted">дней подряд</span></div>
+      <div class="hb-streaks">${streaks.map(({ h, n }) => `<span class="chip hb-streak" title="${esc(h.name)}: ${n} ${dayWord(n)} подряд">🔥 ${esc(h.icon || '')} ${esc(h.name)} <b>${n}</b></span>`).join('')}</div>
+    </section>` : ''}
+
+    ${active.length ? `<section class="card" data-block="stats" data-block-title="Статистика">
+      <details class="acc" data-acc="stats" ${statsOpen ? 'open' : ''}>
+        <summary>${icon('chevronDown')} Статистика</summary>
+        <div class="acc-body">${statsOpen ? statsHtml() : ''}</div>
+      </details>
+    </section>` : ''}
+
+    ${archived.length ? `<section class="card" data-block="archive" data-block-title="Архив">
+      <details class="acc" data-acc="archive" ${archiveOpen ? 'open' : ''}>
+        <summary>${icon('chevronDown')} Архив <span class="pill">${archived.length}</span></summary>
+        <div class="list acc-body">
           ${archived.map(h => `<div class="list-item">
-            <span style="font-size:20px;width:28px;text-align:center">${esc(h.icon || '✅')}</span>
+            <span class="hb-ico" style="--dot:${esc(h.color || 'var(--c1)')}">${esc(h.icon || '✅')}</span>
             <div class="main"><div class="title muted">${esc(h.name)}</div></div>
-            <button type="button" class="btn sm secondary" data-action="restore" data-id="${esc(h.id)}">восстановить</button>
-            <button type="button" class="icon-btn sm" data-action="edit" data-id="${esc(h.id)}" aria-label="Изменить">${icon('edit')}</button>
+            <button type="button" class="btn sm secondary" data-action="restore" data-id="${esc(h.id)}">Вернуть</button>
+            <button type="button" class="icon-btn sm" data-action="edit" data-id="${esc(h.id)}" aria-label="Изменить: ${esc(h.name)}">${icon('edit')}</button>
           </div>`).join('')}
         </div>
       </details>
-    </div>` : ''}
+    </section>` : ''}
   </div>`;
 
+  bind(root, ctx, { all, status, rerender, statsHtml });
+}
+
+function bind(root, ctx, { all, status, rerender, statsHtml }) {
   const view = root.firstElementChild;
 
   on(view, 'click', '[data-action]', (e, b) => {
@@ -267,12 +374,35 @@ export async function render(root, ctx) {
     switch (a) {
       case 'new': openHabitModal(null, all.length); break;
       case 'edit': if (h) openHabitModal(h, all.length); break;
-      case 'toggle': if (h) { const tg = targetOf(h); setCount(h.id, day, cnt(h, day) >= tg ? 0 : tg); } break;
-      case 'plus': if (h) setCount(h.id, day, Math.min(targetOf(h), cnt(h, day) + 1)); break;
-      case 'restore': if (h) { db.update('habits', h.id, { archived: false }); toast('Привычка восстановлена'); } break;
+      case 'toggle': {
+        if (!h) break;
+        const st = status(h, day);
+        if (st.auto?.done && st.manual < st.target) { toast('Отмечено автоматически из данных дня'); break; }
+        const nowDone = st.manual >= st.target;
+        setHabitCount(h.id, day, nowDone ? 0 : st.target);
+        if (!nowDone) { const c = habitCheer(); if (c) toast(c); }
+        break;
+      }
+      case 'plus': {
+        if (!h) break;
+        const st = status(h, day);
+        const next = Math.min(st.target, st.manual + 1);
+        setHabitCount(h.id, day, next);
+        if (next >= st.target) { const c = habitCheer(); if (c) toast(c); }
+        break;
+      }
+      case 'restore': if (h) { db.update('habits', h.id, { archived: false }); toast('Привычка возвращена'); } break;
+      case 'archive': {
+        archiveOpen = true;
+        const d = view.querySelector('details[data-acc="archive"]');
+        if (d) { d.open = true; d.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+        break;
+      }
       default: break;
     }
   });
+
+  on(view, 'click', '[data-day]', (e, b) => { day = b.dataset.day; rerender(); });
 
   on(view, 'click', '[data-dn]', (e, b) => {
     const a = b.dataset.dn;
@@ -283,4 +413,15 @@ export async function render(root, ctx) {
     rerender();
   });
   on(view, 'change', '[data-dn="pick"]', (e, inp) => { if (inp.value) { day = inp.value; rerender(); } });
+
+  // toggle не всплывает — ловим на фазе захвата; статистику считаем только при открытии.
+  view.addEventListener('toggle', (e) => {
+    const d = e.target;
+    if (!(d instanceof HTMLDetailsElement)) return;
+    if (d.dataset.acc === 'stats') {
+      statsOpen = d.open;
+      const body = d.querySelector('.acc-body');
+      if (d.open && body && !body.innerHTML.trim() && statsHtml) body.innerHTML = statsHtml();
+    } else if (d.dataset.acc === 'archive') archiveOpen = d.open;
+  }, true);
 }

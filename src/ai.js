@@ -6,8 +6,8 @@
 // это допустимо для личного приложения, где ключ принадлежит самому пользователю.
 
 import { db } from './db.js';
+import { ceoPerson, ensureCeoPerson, addTask, addNote, setTaskDone, lastContactOf, occursOn } from './model.js';
 import { today, addDays, fmtDate, lastNDays } from './ui.js';
-import { occursOn } from './pages/calendar.js';
 
 const API_URL = 'https://api.anthropic.com/v1/messages';
 const API_VERSION = '2026-10-21';
@@ -23,7 +23,7 @@ export const MODELS = [
 let cfg = load();
 function load() { try { return JSON.parse(localStorage.getItem(LS_KEY) || 'null') || { apiKey: '', model: 'claude-opus-5-5', workspaceId: '' }; } catch { return { apiKey: '', model: 'claude-opus-5-5', workspaceId: '' }; } }
 export function aiConfig() { return { ...cfg }; }
-export function setAiConfig(patch) { cfg = { ...cfg, ...patch }; try { localStorage.setItem(LS_KEY, JSON.stringify(cfg)); } catch {} }
+export function setAiConfig(patch) { cfg = { ...cfg, ...patch }; try { localStorage.setItem(LS_KEY, JSON.stringify(cfg)); } catch {} window.dispatchEvent(new Event('ultimate:ai')); }
 export function aiReady() { return !!(cfg.apiKey && cfg.apiKey.trim()); }
 
 // ---------- история чата (только текст, для показа и продолжения разговора) ----------
@@ -84,30 +84,31 @@ export function buildContext(pageId) {
     return `- [id ${p.id}] ${cut(p.name, 80)} · ${p.status} · ${p.progress || 0}%${p.deadline ? ` · до ${p.deadline}` : ''}${p.nextStep ? ` · следующий шаг: ${cut(p.nextStep, 100)}` : ''}${streams.length ? ` · стримы: ${streams.map(st => `${cut(st.name, 30)} (${pt.filter(x => x.streamId === st.id && !x.done).length} откр.)`).join(', ')}` : ''}${pt.length ? ` · задач ${pt.filter(x => x.done).length}/${pt.length}` : ''}${log ? ` · журнал: ${log}` : ''}${p.notes ? ` · заметки: ${cut(p.notes, 200)}` : ''}`;
   }).join('\n'));
 
-  // Shadow
-  const sTasks = db.all('shadowTasks').filter(x => !x.done);
-  const sNotes = db.all('shadowNotes');
-  if (sTasks.length || sNotes.length) {
-    L.push(`\n## Shadow (работа с CEO)`);
-    if (sTasks.length) L.push('Открытые задачи от CEO:\n' + sTasks.slice(0, 10).map(x => `- [id ${x.id}] ${cut(x.title, 90)}${x.deadline ? ` · до ${x.deadline}` : ''}${x.priority === 1 ? ' (срочно)' : ''}${x.context ? ` · ${cut(x.context, 120)}` : ''}`).join('\n'));
-    const advice = sNotes.filter(n => n.type === 'advice').sort((a, b) => (b.pinned - a.pinned) || (b.date > a.date ? 1 : -1)).slice(0, 10);
-    const notes = sNotes.filter(n => n.type === 'note').sort((a, b) => (b.pinned - a.pinned) || (b.date > a.date ? 1 : -1)).slice(0, 10);
-    if (advice.length) L.push('Его рекомендации:\n' + advice.map(n => `- ${n.pinned ? '★ ' : ''}${cut(n.title, 80)}${n.body ? `: ${cut(n.body, 160)}` : ''}`).join('\n'));
-    if (notes.length) L.push('Наблюдения о нём:\n' + notes.map(n => `- ${n.pinned ? '★ ' : ''}${cut(n.title, 80)}${n.body ? `: ${cut(n.body, 160)}` : ''}`).join('\n'));
+  // Shadow: задачи и заметки, связанные с CEO (единые модели)
+  const ceo = ceoPerson();
+  if (ceo) {
+    const sTasks = tasks.filter(x => !x.done && x.personId === ceo.id);
+    const sNotes = db.all('notes').filter(n => n.personId === ceo.id);
+    if (sTasks.length || sNotes.length) {
+      L.push(`\n## Shadow (работа с CEO — ${cut(ceo.name, 40)})`);
+      if (sTasks.length) L.push('Открытые задачи и обязательства с CEO:\n' + sTasks.slice(0, 10).map(x => `- [id ${x.id}] ${cut(x.title, 90)}${x.date ? ` · до ${x.date}` : ''}${x.priority === 1 ? ' (срочно)' : ''}${x.direction === 'theirs' ? ' (жду от него)' : ''}${x.notes ? ` · ${cut(x.notes, 120)}` : ''}`).join('\n'));
+      const advice = sNotes.filter(n => n.type === 'recommendation').sort((a, b) => (b.pinned - a.pinned) || (b.date > a.date ? 1 : -1)).slice(0, 10);
+      const notes = sNotes.filter(n => n.type !== 'recommendation').sort((a, b) => (b.pinned - a.pinned) || (b.date > a.date ? 1 : -1)).slice(0, 10);
+      if (advice.length) L.push('Его рекомендации:\n' + advice.map(n => `- ${n.pinned ? '★ ' : ''}${cut(n.title, 80)}${n.body ? `: ${cut(n.body, 160)}` : ''}`).join('\n'));
+      if (notes.length) L.push('Заметки и итоги встреч с ним:\n' + notes.map(n => `- [${n.type}] ${cut(n.title, 80)}${n.body ? `: ${cut(n.body, 160)}` : ''}`).join('\n'));
+    }
   }
 
-  // Люди и обязательства
+  // Люди и обязательства (задачи с personId)
   const people = db.all('people');
-  const comms = db.all('commitments').filter(c => !c.done);
   if (people.length) {
-    const lastOf = (id) => { const l = db.where('contacts', c => c.personId === id).map(c => c.date).sort(); return l.length ? l[l.length - 1] : null; };
     L.push(`\n## Люди\n` + people.slice(0, 15).map(p => {
-      const mine = comms.filter(c => c.personId === p.id && c.direction === 'mine'), theirs = comms.filter(c => c.personId === p.id && c.direction === 'theirs');
-      const last = lastOf(p.id);
-      return `- [id ${p.id}] ${cut(p.name, 40)}${p.role ? ` · ${cut(p.role, 40)}` : ''} (${p.type})${last ? ` · последний контакт ${last}` : ' · контактов не было'}${mine.length ? ` · я обещала: ${mine.map(c => `${cut(c.title, 50)}${c.due ? ` до ${c.due}` : ''}`).join('; ')}` : ''}${theirs.length ? ` · мне обещали: ${theirs.map(c => `${cut(c.title, 50)}${c.due ? ` до ${c.due}` : ''}`).join('; ')}` : ''}${p.notes ? ` · как работать: ${cut(p.notes, 120)}` : ''}`;
+      const mine = open.filter(c => c.personId === p.id && c.direction !== 'theirs'), theirs = open.filter(c => c.personId === p.id && c.direction === 'theirs');
+      const last = lastContactOf(p.id);
+      return `- [id ${p.id}] ${cut(p.name, 40)}${p.role ? ` · ${cut(p.role, 40)}` : ''} (${p.type})${last ? ` · последний контакт ${last}` : ' · контактов не было'}${mine.length ? ` · мои задачи/обещания: ${mine.map(c => `${cut(c.title, 50)}${c.date ? ` до ${c.date}` : ''}`).join('; ')}` : ''}${theirs.length ? ` · жду от него: ${theirs.map(c => `${cut(c.title, 50)}${c.date ? ` до ${c.date}` : ''}`).join('; ')}` : ''}${p.notes ? ` · как работать: ${cut(p.notes, 120)}` : ''}`;
     }).join('\n'));
   }
-  const ideas = db.all('ideas').filter(i => i.status !== 'done' && i.status !== 'dropped');
+  const ideas = db.all('notes').filter(i => i.type === 'idea' && i.status !== 'done' && i.status !== 'dropped');
   if (ideas.length) L.push(`\n## Идеи (копилка)\n` + ideas.slice(0, 10).map(i => `- [id ${i.id}] ${cut(i.title, 70)} · ${i.status} · эффект ${i.impact || 2}/3, усилия ${i.effort || 2}/3`).join('\n'));
   const kbSections = db.all('kbSections');
   if (kbSections.length) L.push(`\n## База знаний\n` + kbSections.map(sec => `- ${sec.icon || ''} ${cut(sec.name, 40)}: ${db.where('kbPages', pg => pg.sectionId === sec.id).slice(0, 8).map(pg => cut(pg.title, 40)).join(', ') || 'пусто'}`).join('\n'));
@@ -170,17 +171,17 @@ const TOOLS = [
     input_schema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] } },
   { name: 'log_habit', description: 'Отметить привычку выполненной сегодня по id привычки из контекста.',
     input_schema: { type: 'object', properties: { habitId: { type: 'string' } }, required: ['habitId'] } },
-  { name: 'add_shadow_task', description: 'Записать задачу от CEO в раздел Shadow.',
+  { name: 'add_shadow_task', description: 'Записать задачу от CEO: обычная задача со связью с CEO (видна в Shadow, Плане, календаре).',
     input_schema: { type: 'object', properties: { title: { type: 'string' }, deadline: { type: 'string', description: 'YYYY-MM-DD или пусто' }, context: { type: 'string' }, priority: { type: 'integer', description: '1 срочно, 2 обычная, 3 не срочно' } }, required: ['title'] } },
-  { name: 'add_shadow_note', description: 'Записать в Shadow рекомендацию CEO (type=advice) или наблюдение о работе с ним (type=note).',
+  { name: 'add_shadow_note', description: 'Записать заметку, связанную с CEO: рекомендацию (type=advice) или наблюдение/итог встречи (type=note). Хранится как обычная заметка.',
     input_schema: { type: 'object', properties: { type: { type: 'string', enum: ['advice', 'note'] }, title: { type: 'string' }, body: { type: 'string' } }, required: ['type', 'title'] } },
   { name: 'add_project_log', description: 'Добавить запись в журнал проекта по id проекта из контекста. Можно обновить готовность в процентах.',
     input_schema: { type: 'object', properties: { projectId: { type: 'string' }, text: { type: 'string' }, progress: { type: 'integer' } }, required: ['projectId', 'text'] } },
   { name: 'add_goal', description: 'Создать новую цель.',
     input_schema: { type: 'object', properties: { title: { type: 'string' }, description: { type: 'string' }, horizon: { type: 'string', enum: ['year', 'quarter', 'month'] }, deadline: { type: 'string' }, areaKey: { type: 'string', enum: ['career', 'health', 'learning', 'finance', 'relations', 'personal'] } }, required: ['title'] } },
-  { name: 'add_commitment', description: 'Записать обязательство: что я обещала человеку (direction=mine) или что он обещал мне (direction=theirs). personId — из контекста раздела «Люди».',
+  { name: 'add_commitment', description: 'Записать обязательство как задачу со связью с человеком: что я обещала (direction=mine) или что он обещал мне (direction=theirs). personId — из контекста раздела «Люди».',
     input_schema: { type: 'object', properties: { personId: { type: 'string' }, direction: { type: 'string', enum: ['mine', 'theirs'] }, title: { type: 'string' }, due: { type: 'string', description: 'YYYY-MM-DD или пусто' } }, required: ['personId', 'direction', 'title'] } },
-  { name: 'log_contact', description: 'Записать контакт с человеком (встреча, созвон, переписка): о чём говорили и следующий шаг. Обновляет дату последнего контакта.',
+  { name: 'log_contact', description: 'Записать итог встречи/созвона/переписки с человеком как заметку типа meeting: о чём говорили и следующий шаг. Обновляет дату последнего контакта.',
     input_schema: { type: 'object', properties: { personId: { type: 'string' }, text: { type: 'string' }, next: { type: 'string' }, kind: { type: 'string', enum: ['meeting', 'call', 'chat', 'other'] } }, required: ['personId', 'text'] } },
   { name: 'add_idea', description: 'Записать идею в копилку идей (раздел Заметки → Идеи).',
     input_schema: { type: 'object', properties: { title: { type: 'string' }, body: { type: 'string' }, impact: { type: 'integer', description: '1-3' }, effort: { type: 'integer', description: '1-3' } }, required: ['title'] } },
@@ -194,12 +195,12 @@ function runTool(name, input) {
   const t = today();
   switch (name) {
     case 'add_task': {
-      const rec = db.add('tasks', { title: String(input.title || '').trim(), date: input.timeless ? null : (input.date || null), timeless: !!input.timeless, priority: [1, 2, 3].includes(Number(input.priority)) ? Number(input.priority) : 2, goalId: null, projectId: input.projectId && db.get('projects', input.projectId) ? input.projectId : null, streamId: null, estimateMin: null, notes: '', recurring: null, done: false, doneAt: null });
+      const rec = addTask({ title: String(input.title || '').trim(), date: input.timeless ? null : (input.date || null), timeless: !!input.timeless, priority: [1, 2, 3].includes(Number(input.priority)) ? Number(input.priority) : 2, projectId: input.projectId && db.get('projects', input.projectId) ? input.projectId : null, source: 'assistant' });
       return `Задача добавлена: «${rec.title}»${rec.date ? ` на ${rec.date}` : rec.timeless ? ' (бессрочная)' : ' (в инбокс)'}.`;
     }
     case 'complete_task': {
       const x = db.get('tasks', input.id); if (!x) return 'Ошибка: задача с таким id не найдена.';
-      db.update('tasks', x.id, { done: true, doneAt: t }); return `Задача «${x.title}» отмечена выполненной.`;
+      setTaskDone(x.id, true); return `Задача «${x.title}» отмечена выполненной.`;
     }
     case 'log_habit': {
       const h = db.get('habits', input.habitId); if (!h) return 'Ошибка: привычка не найдена.';
@@ -209,12 +210,14 @@ function runTool(name, input) {
       return `Привычка «${h.name}» отмечена на сегодня.`;
     }
     case 'add_shadow_task': {
-      const rec = db.add('shadowTasks', { title: String(input.title || '').trim(), context: input.context || '', deadline: input.deadline || null, priority: [1, 2, 3].includes(Number(input.priority)) ? Number(input.priority) : 2, done: false, doneAt: null, result: '', receivedAt: t });
-      return `В Shadow записана задача: «${rec.title}»${rec.deadline ? ` до ${rec.deadline}` : ''}.`;
+      const ceo = ensureCeoPerson();
+      const rec = addTask({ title: String(input.title || '').trim(), notes: input.context || '', date: input.deadline || null, priority: [1, 2, 3].includes(Number(input.priority)) ? Number(input.priority) : 2, personId: ceo.id, source: 'ceo', receivedAt: t, result: '' });
+      return `Записана задача от CEO: «${rec.title}»${rec.date ? ` до ${rec.date}` : ''}.`;
     }
     case 'add_shadow_note': {
-      const rec = db.add('shadowNotes', { type: input.type === 'advice' ? 'advice' : 'note', title: String(input.title || '').trim(), body: input.body || '', date: t, tags: [], pinned: false });
-      return `${rec.type === 'advice' ? 'Рекомендация' : 'Заметка'} записана: «${rec.title}».`;
+      const ceo = ensureCeoPerson();
+      const rec = addNote({ type: input.type === 'advice' ? 'recommendation' : 'note', title: String(input.title || '').trim(), body: input.body || '', date: t, personId: ceo.id });
+      return `${rec.type === 'recommendation' ? 'Рекомендация' : 'Заметка'} о CEO записана: «${rec.title}».`;
     }
     case 'add_project_log': {
       const p = db.get('projects', input.projectId); if (!p) return 'Ошибка: проект не найден.';
@@ -227,16 +230,18 @@ function runTool(name, input) {
     }
     case 'add_commitment': {
       const p = db.get('people', input.personId); if (!p) return 'Ошибка: человек не найден.';
-      const rec = db.add('commitments', { personId: p.id, direction: input.direction === 'theirs' ? 'theirs' : 'mine', title: String(input.title || '').trim(), due: input.due || null, notes: '', done: false, doneAt: null });
-      return `${rec.direction === 'mine' ? 'Записано обещание' : 'Записано, что обещали'}: «${rec.title}» (${p.name})${rec.due ? ` до ${rec.due}` : ''}.`;
+      const direction = input.direction === 'theirs' ? 'theirs' : 'mine';
+      const rec = addTask({ title: String(input.title || '').trim(), date: input.due || null, personId: p.id, direction, source: 'promise' });
+      return `${direction === 'mine' ? 'Записано обещание' : 'Записано, что обещали'}: «${rec.title}» (${p.name})${rec.date ? ` до ${rec.date}` : ''}.`;
     }
     case 'log_contact': {
       const p = db.get('people', input.personId); if (!p) return 'Ошибка: человек не найден.';
-      db.add('contacts', { personId: p.id, date: t, kind: input.kind || 'other', text: String(input.text || '').trim(), next: input.next || '' });
-      return `Контакт с ${p.name} записан.`;
+      const text = String(input.text || '').trim();
+      addNote({ type: 'meeting', title: text.split('\n')[0].slice(0, 80), body: text, date: t, personId: p.id, meetingKind: input.kind || 'other', next: input.next || '' });
+      return `Итог контакта с ${p.name} записан.`;
     }
     case 'add_idea': {
-      const rec = db.add('ideas', { title: String(input.title || '').trim(), body: input.body || '', status: 'new', impact: [1, 2, 3].includes(Number(input.impact)) ? Number(input.impact) : 2, effort: [1, 2, 3].includes(Number(input.effort)) ? Number(input.effort) : 2, tags: [], pinned: false });
+      const rec = addNote({ type: 'idea', title: String(input.title || '').trim(), body: input.body || '', status: 'new', impact: [1, 2, 3].includes(Number(input.impact)) ? Number(input.impact) : 2, effort: [1, 2, 3].includes(Number(input.effort)) ? Number(input.effort) : 2 });
       return `Идея записана: «${rec.title}».`;
     }
     case 'add_event': {
@@ -262,7 +267,7 @@ function systemPrompt(pageId) {
 
 Ниже дана выжимка реальных данных пользователя на сегодня. Опирайся только на неё и на то, что пользователь пишет; ничего не выдумывай. Если данных не хватает — скажи, чего именно, и задай один точный вопрос.
 
-Стиль: по-русски, на «ты», коротко и по делу, как опытный коуч и ассистент одновременно. Пользователь любит чемпионский настрой: можно изредка обращаться «чемпион» и заканчивать ответ одной короткой мотивирующей фразой, без пафоса и без повторов. Конкретные советы вместо общих слов. Нумерованные списки для шагов, без воды и без лишних вступлений. Когда уместно — ссылайся на цифры из данных. Если видишь перегруз (много просроченного, мало сна, высокий стресс, низкая уверенность) — скажи об этом прямо и предложи, что убрать.
+Стиль: по-русски, на «ты», коротко и по делу, как опытный коуч и ассистент одновременно. Обращение и тон — как в настройках приложения (нейтральный по умолчанию: без «чемпион» и лозунгов).
 
 Для раздела Shadow: помогай готовиться к разговорам с CEO, опираясь на записанные рекомендации и наблюдения; формулируй, как лучше подать вопрос или результат именно этому человеку.
 

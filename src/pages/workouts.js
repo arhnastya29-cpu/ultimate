@@ -1,12 +1,11 @@
 import { db } from '../db.js';
-import { esc, el, icon, field, formRow, modal, toast, on, today, addDays, startOfWeek, monthKey, fmtDate, fmtNum, fmtMinutes, sum, sortBy, emptyState, barChart, lineChart, plural } from '../ui.js';
+import { esc, el, icon, field, formRow, modal, toast, on, today, addDays, startOfWeek, monthKey, fmtDate, fmtNum, fmtMinutes, sum, sortBy, emptyState, emptyAction, statLine, pageMenu, barChart, lineChart, plural } from '../ui.js';
 
 export const title = 'Тренировки';
 
 const TYPES = { strength: 'Силовая', cardio: 'Кардио', mobility: 'Мобильность', other: 'Другое' };
 const TYPE_PILL = { strength: 'accent', cardio: 'info', mobility: 'good', other: '' };
 const dm = (d) => `${d.slice(8, 10)}.${d.slice(5, 7)}`;
-const tile = (label, value, sub = '') => `<div class="stat"><div class="label">${label}</div><div class="value">${value}</div>${sub ? `<div class="sub">${sub}</div>` : ''}</div>`;
 const num = (v) => (v === '' || v == null || isNaN(Number(v))) ? null : Number(v);
 const isCardio = (type) => type === 'cardio';
 const modeOf = (type) => isCardio(type) ? 'cardio' : 'strength';
@@ -307,7 +306,7 @@ export async function render(root, ctx) {
   const recent = sortBy(workouts, w => w.date + (w.createdAt || ''), true).slice(0, 30);
   const dates = [...new Set(recent.map(w => w.date))];
   const workoutRow = (w) => `
-    <div class="list-item clickable" data-workout="${esc(w.id)}">
+    <div class="list-item clickable" data-workout="${esc(w.id)}" tabindex="0" role="button">
       <span class="pill ${TYPE_PILL[w.type] || ''}">${esc(TYPES[w.type] || TYPES.other)}</span>
       <div class="main">
         <div class="title">${esc(w.title || TYPES[w.type] || 'Тренировка')}</div>
@@ -319,63 +318,74 @@ export async function render(root, ctx) {
       </div>
     </div>`;
 
-  root.innerHTML = `<div>
+  const stats = statLine([
+    weekW.length ? `На этой неделе <b>${weekW.length}</b> ${plural(weekW.length, 'тренировка', 'тренировки', 'тренировок')}` : '',
+    weekTime ? `<b>${esc(fmtMinutes(weekTime))}</b>` : '',
+    weekTon ? `тоннаж <b>${fmtNum(weekTon)} кг</b>` : '',
+    monthW.length ? `за месяц <b>${monthW.length}</b>` : '',
+    streak > 1 ? `<b>${streak}</b> ${plural(streak, 'неделя', 'недели', 'недель')} подряд` : '',
+  ]);
+
+  const templateChip = (tp) => `<span class="tpl-chip">
+    <button type="button" class="tpl-start" data-tpl-start="${esc(tp.id)}" title="${esc((tp.exercises || []).map(e => e.name).join(', '))}">${icon('play')} ${esc(tp.title)}</button>
+    <button type="button" class="icon-btn sm" data-tpl-edit="${esc(tp.id)}" aria-label="Изменить шаблон «${esc(tp.title)}»">${icon('edit')}</button>
+  </span>`;
+
+  root.innerHTML = `<div class="body-page" data-page="workouts">
     <div class="page-head">
       <div><div class="eyebrow">Тело</div><h1>Тренировки</h1></div>
-      <div class="actions"><button class="btn" data-action="add-workout">${icon('plus')} Тренировка</button></div>
-    </div>
-
-    <div class="grid-4">
-      ${tile('Тренировок за неделю', String(weekW.length), `за месяц: ${monthW.length}`)}
-      ${tile('Время за неделю', weekTime ? esc(fmtMinutes(weekTime)) : '—', weekW.length ? `${weekW.length} ${plural(weekW.length, 'тренировка', 'тренировки', 'тренировок')}` : 'пока ничего')}
-      ${tile('Тоннаж за неделю', weekTon ? `${fmtNum(weekTon)}<small>кг</small>` : '—', 'сумма повторы × вес')}
-      ${tile('Серия недель', String(streak), streak ? `${plural(streak, 'неделя', 'недели', 'недель')} подряд с тренировкой` : 'потренируйтесь на этой неделе')}
-    </div>
-
-    <div class="grid-2" style="margin-top:12px;align-items:start">
-      <div class="card">
-        <div class="row between"><h3 style="margin:0">Тренировки по неделям</h3><span class="tiny muted">8 недель</span></div>
-        ${workouts.length ? barChart(bars, { showValues: true, height: 120 }) : emptyState('Добавьте первую тренировку', '🏋️')}
-      </div>
-      <div class="card">
-        <h3>Личные рекорды</h3>
-        ${prs.length ? `<div class="grid-2" style="gap:8px">${prs.map(p => `
-          <div style="background:var(--bg);border-radius:var(--radius-s);padding:10px 12px;min-width:0">
-            <div class="label ellipsis" title="${esc(p.name)}">${esc(p.name)}</div>
-            <div class="value" style="font-size:20px;margin-top:2px">${fmtNum(p.maxW, 1)}<small>кг${p.maxWReps ? ` × ${esc(p.maxWReps)}` : ''}</small></div>
-            <div class="tiny muted">1ПМ ≈ ${fmtNum(p.e1rm)} кг · ${esc(fmtDate(p.maxWDate))}</div>
-          </div>`).join('')}</div>` : emptyState('Рекорды появятся после силовых тренировок с весом', '🏆')}
+      <div class="actions">
+        <button class="btn" data-action="add-workout">${icon('plus')} Тренировка</button>
+        ${pageMenu([
+          { label: 'Новый шаблон', action: 'add-template', icon: 'copy' },
+          { label: 'Настроить страницу', action: 'customize', icon: 'sliders' },
+        ])}
       </div>
     </div>
+    ${stats}
 
-    <div class="section-title"><h2>Шаблоны</h2><button class="btn sm secondary" data-action="add-template">${icon('plus')} Шаблон</button></div>
-    ${templates.length ? `<div class="grid-auto">${templates.map(tp => `
-      <div class="card">
-        <div class="row between top"><div class="bold">${esc(tp.title)}</div><span class="pill ${TYPE_PILL[tp.type] || ''}">${esc(TYPES[tp.type] || TYPES.other)}</span></div>
-        <div class="tiny muted" style="margin:6px 0 10px">${esc((tp.exercises || []).map(e => isCardio(tp.type) ? e.name : `${e.name} · ${(e.sets || []).length} ${plural((e.sets || []).length, 'подход', 'подхода', 'подходов')}`).join(', ')) || 'без упражнений'}</div>
-        <div class="row">
-          <button class="btn sm" data-tpl-start="${esc(tp.id)}">${icon('play')} Начать по шаблону</button>
-          <button class="icon-btn sm" data-tpl-edit="${esc(tp.id)}" aria-label="Изменить шаблон">${icon('edit')}</button>
-        </div>
-      </div>`).join('')}</div>` : `<div class="card">${emptyState('Сохраните тренировку как шаблон или создайте его вручную', '📋')}</div>`}
-
-    <div class="section-title"><h2>Журнал</h2><span class="tiny muted">последние 30</span></div>
-    <div class="card">
+    <div class="card" data-block="journal" data-block-title="Журнал">
+      <div class="row between"><h3 style="margin:0">Журнал</h3>${dates.length ? `<span class="tiny muted">последние ${recent.length}</span>` : ''}</div>
       ${dates.length ? dates.map(d => `
         <div class="label caps" style="margin:10px 0 2px">${esc(fmtDate(d, { weekday: true }))}</div>
-        <div class="list">${recent.filter(w => w.date === d).map(workoutRow).join('')}</div>`).join('') : emptyState('Тренировок пока нет — начните с кнопки сверху или по шаблону', '🏋️')}
+        <div class="list">${recent.filter(w => w.date === d).map(workoutRow).join('')}</div>`).join('')
+      : emptyAction({ text: 'Записывайте тренировки: упражнения, подходы и вес — рекорды и прогресс посчитаются сами', action: 'add-workout', label: 'Тренировка' })}
     </div>
 
-    <div class="card" style="margin-top:12px">
-      <div class="row between wrap">
-        <h3 style="margin:0">Прогресс по упражнению</h3>
-        <select class="input" style="width:auto;padding:6px 10px;font-size:13px" data-progress ${exNames.length ? '' : 'disabled'}>
-          ${exNames.length ? exNames.map(n => `<option value="${esc(n)}" ${n === progressEx ? 'selected' : ''}>${esc(n)}</option>`).join('') : '<option value="">Нет данных</option>'}
-        </select>
+    ${templates.length ? `<div class="section-title"><h2>Начать по шаблону</h2><button class="btn sm secondary" data-action="add-template">${icon('plus')} Шаблон</button></div>
+      <div class="tpl-row" data-block="templates" data-block-title="Шаблоны">${templates.map(templateChip).join('')}</div>`
+    : workouts.length ? `<div class="empty-row" data-block="templates" data-block-title="Шаблоны"><span>Шаблон хранит список упражнений: повторяющиеся тренировки записываются в два касания.</span><button class="btn sm secondary" data-action="add-template">${icon('plus')} Шаблон</button></div>` : ''}
+
+    ${workouts.length ? `<details class="acc card" data-block="analytics" data-block-title="Динамика и рекорды" style="margin-top:14px">
+      <summary><span class="icon-btn sm chev">${icon('chevronDown')}</span> Динамика и рекорды <span class="sum-sub">8 недель</span></summary>
+      <div class="acc-body">
+        <div class="acc-grid">
+          <div class="card">
+            <div class="row between"><h3 style="margin:0">Тренировки по неделям</h3><span class="tiny muted">8 недель</span></div>
+            ${barChart(bars, { showValues: true, height: 120 })}
+          </div>
+          ${prs.length ? `<div class="card">
+            <h3>Личные рекорды</h3>
+            <div class="pr-grid">${prs.map(p => `
+              <div class="pr-item">
+                <div class="label ellipsis" title="${esc(p.name)}">${esc(p.name)}</div>
+                <div class="value">${fmtNum(p.maxW, 1)}<small>кг${p.maxWReps ? ` × ${esc(p.maxWReps)}` : ''}</small></div>
+                <div class="tiny muted">1ПМ ≈ ${fmtNum(p.e1rm)} кг · ${esc(fmtDate(p.maxWDate))}</div>
+              </div>`).join('')}</div>
+          </div>` : ''}
+        </div>
+        ${exNames.length ? `<div class="card">
+          <div class="row between wrap">
+            <h3 style="margin:0">Прогресс по упражнению</h3>
+            <select class="input" style="width:auto;padding:6px 10px;font-size:13px" data-progress aria-label="Упражнение">
+              ${exNames.map(n => `<option value="${esc(n)}" ${n === progressEx ? 'selected' : ''}>${esc(n)}</option>`).join('')}
+            </select>
+          </div>
+          <p class="tiny muted" style="margin:4px 0 8px">Максимальный рабочий вес в каждой тренировке.</p>
+          ${progressChart}
+        </div>` : ''}
       </div>
-      <p class="tiny muted" style="margin:4px 0 8px">Максимальный рабочий вес в каждой тренировке.</p>
-      ${progressEx ? progressChart : emptyState('Запишите силовую тренировку с весом, чтобы следить за прогрессом', '📈')}
-    </div>
+    </details>` : ''}
   </div>`;
 
   const view = root.firstElementChild;
@@ -384,5 +394,6 @@ export async function render(root, ctx) {
   on(view, 'click', '[data-tpl-start]', (e, b) => { const tp = db.get('workoutTemplates', b.dataset.tplStart); if (tp) startFromTemplate(tp); });
   on(view, 'click', '[data-tpl-edit]', (e, b) => { const tp = db.get('workoutTemplates', b.dataset.tplEdit); if (tp) templateModal(tp); });
   on(view, 'click', '[data-workout]', (e, r) => { const w = db.get('workouts', r.dataset.workout); if (w) workoutModal(w); });
+  on(view, 'keydown', '[data-workout]', (e, r) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); r.click(); } });
   on(view, 'change', '[data-progress]', (e, s) => { progressEx = s.value; rerender(); });
 }

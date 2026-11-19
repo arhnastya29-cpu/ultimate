@@ -1,0 +1,67 @@
+/* Привычки: список дня, полоска недели, серии, статистика. Цвета только через переменные. */
+.habits-page .card + .card { margin-top: 12px; }
+.habits-page .stat-line { margin-top: 0; }
+
+/* Компактный выбор даты в шапке */
+.dn-compact { display: flex; align-items: center; }
+.dn-compact .icon-btn.sm { width: 34px; height: 34px; }
+.dn-compact .chip { min-height: 34px; }
+
+/* Строка привычки */
+.hb-row { gap: 10px; }
+.hb-row .check { width: 26px; height: 26px; }
+.hb-row .check:disabled { cursor: default; opacity: .9; }
+.hb-row .check:disabled:hover { transform: none; }
+.hb-ico { font-size: 20px; line-height: 1; width: 30px; height: 30px; display: grid; place-items: center; border-radius: 9px; background: color-mix(in srgb, var(--dot, var(--accent)) 16%, transparent); flex-shrink: 0; }
+.hb-title { background: none; border: 0; padding: 0; text-align: left; font: inherit; font-weight: 500; font-size: 13.5px; color: var(--fg); cursor: pointer; min-height: 24px; max-width: 100%; overflow-wrap: anywhere; }
+.hb-title:hover { color: var(--accent); }
+.hb-title:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.hb-row.done .hb-title { color: var(--fg-2); }
+.hb-row .sub { overflow-wrap: anywhere; }
+
+/* Дни недели в форме */
+.hb-days { gap: 8px 12px; }
+.hb-days label { gap: 5px; font-size: 13px; min-height: 32px; }
+.hb-auto { border: 1px solid var(--line); border-radius: var(--radius-s); padding: 12px; display: flex; flex-direction: column; gap: 10px; background: var(--surface-2); }
+.hb-auto .field input, .hb-auto .field select { background: var(--surface); }
+.hb-auto [hidden] { display: none; }
+
+/* Полоска недели: 7 столбиков, каждый — кнопка выбора дня */
+.hb-week { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+.hb-day { display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 6px 2px; min-height: 44px; border: 1px solid transparent; border-radius: var(--radius-s); background: none; color: var(--fg-2); font: inherit; cursor: pointer; transition: background .2s, border-color .2s; }
+.hb-day:hover { background: var(--surface-2); }
+.hb-day:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.hb-day.sel { background: var(--surface-2); border-color: var(--line-2); }
+.hb-day.today .hb-day-n { color: var(--accent); font-weight: 700; }
+.hb-day.future { opacity: .45; }
+.hb-day-n { font-size: 11px; text-transform: lowercase; }
+.hb-day-bar { width: 100%; max-width: 22px; height: 44px; border-radius: 6px; background: var(--surface-2); display: flex; align-items: flex-end; overflow: hidden; }
+.hb-day-bar i { display: block; width: 100%; background: var(--accent); border-radius: 6px; transition: height .5s var(--ease); min-height: 0; }
+.hb-day.full .hb-day-bar i { background: var(--good); }
+.hb-day-v { font-family: var(--font-num); font-size: 11px; font-variant-numeric: tabular-nums; color: var(--fg-3); }
+.hb-day.sel .hb-day-v, .hb-day.full .hb-day-v { color: var(--fg); }
+
+/* Серии */
+.hb-streaks { display: flex; flex-wrap: wrap; gap: 8px; }
+.hb-streak { display: inline-flex; align-items: center; gap: 5px; cursor: default; min-height: 34px; white-space: normal; }
+.hb-streak:hover { transform: none; }
+.hb-streak b { font-family: var(--font-num); color: var(--fg); }
+
+/* Статистика и архив — раскрываемые */
+.habits-page details.acc > summary { min-height: 44px; }
+.habits-page details.acc > summary svg { width: 16px; height: 16px; transition: transform .25s var(--ease); color: var(--fg-3); }
+.habits-page details.acc[open] > summary svg { transform: rotate(180deg); }
+.habits-page details.acc > .acc-body { margin-top: 10px; }
+.hb-heat + .hb-heat { padding-top: 12px; border-top: 1px solid var(--line); }
+
+@media (max-width: 860px) {
+  .habits-page .page-head .actions { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; }
+  .dn-compact { grid-column: 1 / -1; }
+  .dn-compact > .row { width: 100%; }
+  .dn-compact .chip { flex: 1; text-align: center; min-height: 40px; }
+  .dn-compact input[type="date"] { width: auto; max-width: 128px; min-height: 40px; padding: 4px 8px; font-size: 13px !important; }
+  .habits-page .page-head .actions .btn { min-height: 44px; }
+  .hb-row { flex-wrap: nowrap; }
+  .hb-row .check { width: 28px; height: 28px; }
+  .hb-day-bar { height: 36px; }
+}

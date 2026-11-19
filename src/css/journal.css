@@ -1,0 +1,42 @@
+/* Рефлексия: быстрая запись, история, обзор недели, статистика. */
+.journal-page .stat-line { margin-top: 0; }
+.journal-page .jr-grid { gap: 12px; }
+
+/* Компактный выбор даты в шапке */
+.dn-compact { display: flex; align-items: center; }
+.dn-compact .icon-btn.sm { width: 34px; height: 34px; }
+.dn-compact .chip { min-height: 34px; }
+
+/* Форма дня */
+.jr-form { gap: 14px; }
+.jr-mood { gap: 6px; }
+.jr-mood button { width: 44px; height: 44px; font-size: 22px; line-height: 1; }
+.jr-mood button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.jr-prompt { font-size: 13px; color: var(--accent); background: var(--accent-soft); padding: 10px 12px; border-radius: 10px; line-height: 1.45; }
+.jr-foot { gap: 8px; }
+.jr-foot .btn.ghost svg { width: 14px; height: 14px; }
+
+/* История и обзоры — строки-кнопки */
+.journal-page button.list-item { width: calc(100% + 12px); text-align: left; background: none; border: 0; border-bottom: 1px solid var(--line); font: inherit; color: inherit; min-height: 44px; }
+.journal-page button.list-item:last-child { border-bottom: 0; }
+.journal-page button.list-item:hover { background: var(--surface-2); }
+.journal-page button.list-item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.journal-page .list-item.current { background: var(--accent-soft); }
+.journal-page .list-item.current .title { color: var(--accent); }
+.jr-mood-ico { font-size: 20px; width: 28px; text-align: center; flex-shrink: 0; }
+
+/* Статистика — раскрываемая */
+.journal-page details.acc > summary { min-height: 44px; }
+.journal-page details.acc > summary svg { width: 16px; height: 16px; transition: transform .25s var(--ease); color: var(--fg-3); }
+.journal-page details.acc[open] > summary svg { transform: rotate(180deg); }
+.journal-page details.acc > .acc-body { margin-top: 10px; }
+
+@media (max-width: 860px) {
+  .journal-page .jr-grid { grid-template-columns: 1fr; }
+  .journal-page .page-head .actions { display: flex; align-items: center; }
+  .dn-compact { flex: 1; min-width: 0; }
+  .dn-compact > .row { width: 100%; }
+  .dn-compact .chip { flex: 1; text-align: center; min-height: 40px; }
+  .dn-compact input[type="date"] { width: auto; max-width: 128px; min-height: 40px; padding: 4px 8px; font-size: 13px !important; }
+  .jr-form .btn[type="submit"] { min-height: 44px; flex: 1 1 auto; }
+}

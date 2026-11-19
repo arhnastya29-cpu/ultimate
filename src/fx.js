@@ -2,6 +2,8 @@
 // конфетти за закрытый день, переключатель темы.
 import { db } from './db.js';
 import { allDoneMessage } from './motivation.js';
+import { habitStatus, isMine, tone, addTask, addNote, addWater } from './model.js';
+import { openCapture } from './capture.js';
 import { esc, icon, today, toast } from './ui.js';
 
 const reduced = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -103,17 +105,17 @@ export function confetti({ count = 140, origin } = {}) {
 let prevTasksDone = null, prevHabitsDone = null;
 function dayState() {
   const d = today(), wd = (new Date().getDay() + 6) % 7;
-  const tasks = db.all('tasks').filter(t => t.date === d || (t.done && (t.doneAt || '').slice(0, 10) === d));
+  const tasks = db.all('tasks').filter(t => isMine(t) && (t.date === d || (t.done && (t.doneAt || '').slice(0, 10) === d)));
   const tasksAll = tasks.length > 0 && tasks.every(t => t.done);
   const habits = db.all('habits').filter(h => !h.archived && (!h.days?.length || h.days.includes(wd)));
-  const logs = db.all('habitLogs').filter(l => l.date === d);
-  const habitsAll = habits.length > 0 && habits.every(h => (logs.find(l => l.habitId === h.id)?.count || 0) >= (h.target || 1));
+  const habitsAll = habits.length > 0 && habits.every(h => habitStatus(h, d).done);
   return { tasksAll, habitsAll };
 }
 export function watchCelebrations() {
   const s = dayState(); prevTasksDone = s.tasksAll; prevHabitsDone = s.habitsAll;
   db.subscribe((col) => {
-    if (col !== 'tasks' && col !== 'habitLogs' && col !== 'habits') return;
+    if (!['tasks', 'habitLogs', 'habits', 'dayLogs', 'workouts', 'studySessions', 'sleepLogs'].includes(col)) return;
+    if (tone() === 'neutral') { const n0 = dayState(); prevTasksDone = n0.tasksAll; prevHabitsDone = n0.habitsAll; return; }   // в нейтральном режиме без конфетти
     const n = dayState();
     if (n.tasksAll && !prevTasksDone) { confetti(); toast(allDoneMessage('tasks'), 3200); }
     if (n.habitsAll && !prevHabitsDone) { confetti({ count: 100 }); toast(allDoneMessage('habits'), 3200); }
@@ -143,14 +145,17 @@ export function openCommandPalette(pages, navigate) {
     const text = q.trim();
     const num = parseInt(text.match(/\d+/)?.[0] || '', 10);
     if (text) {
-      acts.push({ group: 'Быстрые действия', icon: 'plus', keys: ['задача', 'сделать', 'todo'], label: `Задача на сегодня: «${text}»`, run: () => { db.add('tasks', { title: text, date: d, priority: 2, done: false }); toast('Задача добавлена'); } });
-      acts.push({ group: 'Быстрые действия', icon: 'pen', keys: ['заметка', 'мысль', 'идея'], label: `Заметка: «${text.slice(0, 40)}»`, run: () => { db.add('notes', { title: text.slice(0, 60), body: text, tags: [], pinned: false }); toast('Заметка сохранена'); } });
+      acts.push({ group: 'Быстрые действия', icon: 'plus', keys: ['записать', 'запись'], label: `Записать: «${text.slice(0, 40)}» (подобрать тип)`, run: () => openCapture({ text }) });
+      acts.push({ group: 'Быстрые действия', icon: 'check', keys: ['задача', 'сделать', 'todo'], label: `Задача на сегодня: «${text}»`, run: () => { addTask({ title: text, date: d }); toast('Задача добавлена'); } });
+      acts.push({ group: 'Быстрые действия', icon: 'pen', keys: ['заметка', 'мысль', 'идея'], label: `Заметка: «${text.slice(0, 40)}»`, run: () => { addNote({ title: text.slice(0, 80), body: text.length > 80 ? text : '' }); toast('Заметка сохранена'); } });
       if (num) {
-        acts.push({ group: 'Быстрые действия', icon: 'droplet', keys: ['вода', 'воды', 'мл', 'выпил', 'выпила'], label: `Вода +${num} мл`, run: () => { const l = db.all('dayLogs').find(x => x.date === d); if (l) db.update('dayLogs', l.id, { waterMl: (l.waterMl || 0) + num }); else db.add('dayLogs', { date: d, waterMl: num, steps: 0 }); toast(`+${num} мл воды`); } });
+        acts.push({ group: 'Быстрые действия', icon: 'droplet', keys: ['вода', 'воды', 'мл', 'выпил', 'выпила'], label: `Вода +${num} мл`, run: () => { addWater(num, d); toast(`+${num} мл воды`); } });
         acts.push({ group: 'Быстрые действия', icon: 'brain', keys: ['занятие', 'учил', 'учила', 'мин', 'обучение', 'урок'], label: `Занятие ${num} мин (первая область)`, run: () => { const a = db.all('learningAreas')[0]; if (!a) return toast('Сначала создайте область обучения'); db.add('studySessions', { areaId: a.id, date: d, minutes: num, notes: text.replace(/\d+/, '').trim() }); toast('Занятие записано'); } });
       }
     }
+    if (!text) acts.push({ group: 'Быстрые действия', icon: 'plus', label: 'Записать… (задача, событие, заметка, расход)', run: () => openCapture({}) });
     for (const p of pages) acts.push({ group: 'Перейти', icon: p.icon, label: p.title, k: p.group, run: () => navigate(p.id) });
+    acts.push({ group: 'Перейти', icon: 'zap', label: 'Помощник Claude', run: () => import('./ai-panel.js').then(m => m.openPanel()) });
     acts.push({ group: 'Тема', icon: 'sun', label: 'Светлая тема', run: () => db.setSettings({ theme: 'light' }) });
     acts.push({ group: 'Тема', icon: 'moon', label: 'Тёмная тема', run: () => db.setSettings({ theme: 'dark' }) });
     acts.push({ group: 'Тема', icon: 'settings', label: 'Тема как в системе', run: () => db.setSettings({ theme: 'auto' }) });

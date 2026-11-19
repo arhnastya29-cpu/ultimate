@@ -1,0 +1,68 @@
+/* Проекты (src/pages/projects.js): список, следующие действия, дедлайны, страница проекта.
+   Базовые классы (card, list, list-item, pill, chip, pcard, plog, stream, …) живут в src/styles.css. */
+
+/* --- шапка и сводка --- */
+.pj .page-head .actions { align-items: center; }
+.pj .pj-h1 { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.pj .pj-h1 .pill { font-family: var(--font-body); font-size: 11.5px; letter-spacing: 0; }
+.pj .stat-line { margin: -8px 0 16px; }
+
+/* --- фильтры: чипы переносятся строками, счётчик внутри чипа --- */
+.pj .pj-chips { flex-wrap: wrap; overflow: visible; margin: 0 0 12px; padding: 0; mask-image: none; -webkit-mask-image: none; }
+.pj .pj-chips .chip { min-height: 36px; display: inline-flex; align-items: center; gap: 6px; }
+.pj .pj-chip-n { font-family: var(--font-mono); font-size: 11px; color: var(--fg-3); }
+.pj .chip.active .pj-chip-n { color: inherit; opacity: .75; }
+
+/* --- карточки проектов --- */
+.pj .pj-card .pj-progress .bar { min-width: 0; }
+.pj .pj-pct { min-width: 36px; text-align: right; }
+.pj .pj-meta svg { width: 13px; height: 13px; vertical-align: -2px; }
+.pj .pj-card .icon-btn.sm { min-width: 34px; }
+
+/* --- секции-списки: следующие действия, дедлайны, без активности, завершённые --- */
+.pj .card > .section-title:first-child { margin-top: 0; }
+.pj .card + .card, .pj [data-block] + .card, .pj .card + [data-block], .pj .pj-acc { margin-top: 14px; }
+.pj .list + .list { border-top: 1px solid var(--line); margin-top: 6px; padding-top: 6px; }
+.pj .list-item .main[role="button"] { cursor: pointer; }
+.pj .list-item .main[role="button"]:focus-visible, .pj .list-item[role="button"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 8px; }
+.pj a.list-item { color: inherit; text-decoration: none; }
+.pj a.list-item:hover .title, .pj .pj-link:hover { color: var(--accent); }
+.pj .pj-link { color: inherit; text-decoration: none; }
+.pj .pj-proj-link { display: inline-flex; align-items: center; gap: 4px; color: var(--fg-2); text-decoration: none; font-weight: 500; }
+.pj .pj-proj-link svg { width: 12px; height: 12px; }
+.pj .pj-proj-link:hover { color: var(--accent); }
+.pj .pj-dl.is-late .title { color: var(--bad); }
+.pj .pj-step .btn.sm, .pj .pj-stale .btn.sm { flex-shrink: 0; white-space: nowrap; }
+.pj .pj-done-list { opacity: .7; }
+
+/* --- аналитика и завершённые (раскрываемый блок) --- */
+.pj .pj-acc > summary svg { width: 15px; height: 15px; color: var(--fg-3); transition: transform .25s var(--ease); }
+.pj .pj-acc[open] > summary svg { transform: rotate(180deg); }
+.pj .pj-acc .stat-line { margin: 0; }
+
+/* --- страница проекта --- */
+.pj-detail .pj-info { border-left: 3px solid var(--pc, var(--c1)); margin-bottom: 4px; }
+.pj-detail .pj-info .link { font-size: 12.5px; }
+.pj-detail .pj-notes-acc > summary { color: var(--fg-2); font-weight: 500; }
+.pj-detail .pj-notes-acc > summary svg { width: 13px; height: 13px; }
+.pj-detail .pj-stream-name { background: none; border: 0; padding: 0; font: inherit; font-weight: 600; font-size: 15px; color: var(--fg); cursor: pointer; text-align: left; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pj-detail .pj-stream-name:hover { color: var(--accent); }
+.pj-detail .pj-stream-name:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+.pj-detail .pj-hint { padding: 4px 2px 0; margin-bottom: 8px; line-height: 1.5; }
+.pj-detail .pj-note .sub.ellipsis { max-width: 100%; }
+.pj-detail .empty-act { margin-top: 4px; }
+
+/* --- телефон --- */
+@media (max-width: 860px) {
+  .pj .page-head .actions .pmenu { flex: 0 0 auto; }
+  .pj .page-head .actions .btn { flex: 1 1 auto; }
+  .pj .list-item .btn.sm, .pj .list-item .icon-btn.sm, .pj .pj-chips .chip { min-height: 44px; }
+  .pj .list-item .icon-btn.sm { width: 44px; height: 44px; }
+  .pj .pj-step, .pj .pj-stale { flex-wrap: nowrap; }
+  .pj .pj-step .btn.sm { padding-left: 10px; padding-right: 10px; }
+  .pj .pgrid { grid-template-columns: 1fr; }
+  .pj .pj-meta { gap: 6px 12px; }
+}
+@media (max-width: 480px) {
+  .pj .pj-step .btn.sm span, .pj .pj-stale .btn.sm span { display: none; }
+}

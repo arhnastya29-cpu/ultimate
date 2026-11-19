@@ -39,13 +39,17 @@ export function composeBlocks(pageId, blocks) {
   const list = resolveBlocks(pageId, blocks).filter(b => b.visible && b.html);
   const col = (n) => list.filter(b => b.col === n).map(b => `<section class="block" data-block="${esc(b.id)}" data-block-id="${esc(b.id)}" data-block-title="${esc(b.title)}">${b.html}</section>`).join('');
   const single = list.map(b => `<section class="block" data-block="${esc(b.id)}" data-block-id="${esc(b.id)}" data-block-title="${esc(b.title)}">${b.html}</section>`).join('');
-  if (!list.length) return `<div class="card"><div class="empty">Все блоки скрыты. Нажмите «Настроить страницу», чтобы вернуть нужные.</div></div>`;
+  if (!list.length) return `<div class="card"><div class="empty">Все блоки скрыты. Откройте меню «•••» → «Настроить страницу», чтобы вернуть нужные.</div></div>`;
   // Десктоп: две колонки по выбранной колонке; телефон: общий порядок одной лентой.
-  // Рендерим только один вариант, чтобы id и обработчики не дублировались; при смене ширины
-  // app.js перерисовывает страницу (см. isNarrow()).
+  // Если данных мало (в одной из колонок меньше двух блоков), используем одну центральную колонку,
+  // чтобы справа не оставалось пустого места.
+  const n1 = list.filter(b => b.col === 1).length, n2 = list.filter(b => b.col !== 1).length;
+  const oneCol = n1 < 2 || n2 < 2;
   return isNarrow()
     ? `<div class="blocks blocks-single stack" data-page="${esc(pageId)}">${single}</div>`
-    : `<div class="blocks blocks-cols" data-page="${esc(pageId)}"><div class="stack">${col(1)}</div><div class="stack">${col(2)}</div></div>`;
+    : oneCol
+      ? `<div class="blocks blocks-cols one-col" data-page="${esc(pageId)}"><div class="stack">${single}</div></div>`
+      : `<div class="blocks blocks-cols" data-page="${esc(pageId)}"><div class="stack">${col(1)}</div><div class="stack">${col(2)}</div></div>`;
 }
 
 export function customizeButton(pageId) {
@@ -187,7 +191,12 @@ export function applyLayout(root, pageId) {
     }
     // кнопка настройки
     const actions = root.querySelector('.page-head .actions') || (() => { const h = root.querySelector('.page-head'); if (!h) return null; const a = document.createElement('div'); a.className = 'actions'; h.appendChild(a); return a; })();
-    if (actions && !actions.querySelector('[data-customize]')) actions.insertAdjacentHTML('afterbegin', customizeButton(pageId));
+    // Настройка страницы живёт в меню «•••», а не отдельной шестерёнкой в шапке.
+    if (actions && !actions.querySelector('[data-customize], [data-action="customize"]')) {
+      const list = actions.querySelector('.pmenu-list');
+      if (list) list.insertAdjacentHTML('beforeend', `<button type="button" role="menuitem" class="pmenu-item" data-action="customize">${icon('sliders')}<span>Настроить страницу</span></button>`);
+      else actions.insertAdjacentHTML('beforeend', `<div class="pmenu"><button type="button" class="icon-btn sm" data-pmenu aria-label="Ещё" aria-haspopup="menu" aria-expanded="false">${icon('more')}</button><div class="pmenu-list" role="menu" hidden><button type="button" role="menuitem" class="pmenu-item" data-action="customize">${icon('sliders')}<span>Настроить страницу</span></button></div></div>`);
+    }
   } finally { applying = false; }
 }
 

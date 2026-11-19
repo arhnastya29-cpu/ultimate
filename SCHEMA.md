@@ -35,18 +35,18 @@ export async function render(root, { params, navigate, page }) {
 | `goals` | `title, description, areaKey: 'career'\|'health'\|'learning'\|'finance'\|'relations'\|'personal', horizon: 'year'\|'quarter'\|'month', deadline (date|null), status: 'active'\|'done'\|'paused', keyResults: [{id,title,done}], progress 0-100 (если нет KR — ручной)` |
 | `projects` | `name, description, status: 'idea'\|'active'\|'paused'\|'done', priority 1\|2\|3, deadline (date|null), progress 0-100, nextStep, link, tags: string[], notes, color, startedAt, finishedAt?, log: [{id, date, text}] (журнал событий, новые сверху)` |
 | `visionItems` | доска «Визуализация» (вкладка на странице целей): `type: 'image'\|'text', src (data URL JPEG, сжато до 1400px), w, h, caption, area?, order` |
-| `shadowTasks` | задачи от CEO: `title, context, deadline (date|null), priority 1\|2\|3, done, doneAt?, result, receivedAt` |
-| `shadowNotes` | `type: 'advice'\|'note', title, body, date, tags: string[], pinned, quote (для advice: показывать как послание CEO на главной и страницах; см. `motivation.js`)` |
+| `shadowTasks` | **устаревшая** (до v21): перенесена в `tasks` (`id: ceo_<id>`, `source: 'ceo'`, `personId` = CEO). Не читать и не писать |
+| `shadowNotes` | **устаревшая**: перенесена в `notes` (`id: shadow_<id>`, `type: recommendation|note`, `personId` = CEO, `quote`) |
 | `streams` | направления внутри проекта: `projectId, name, description, status: 'active'\|'paused'\|'done', order` |
 | `people` | `name, type: 'ceo'\|'team'\|'partner'\|'client'\|'other', role, org, tg, email, phone, tags: string[], notes (как работать), color` |
-| `commitments` | обязательства: `personId, direction: 'mine' (я обещала)\|'theirs' (мне обещали), title, due (date|null), notes, done, doneAt?` |
-| `contacts` | журнал контактов: `personId, date, kind: 'meeting'\|'call'\|'chat'\|'other', text, next` — дата последнего контакта считается отсюда |
+| `commitments` | **устаревшая**: перенесена в `tasks` (`id: commit_<id>`, `source: 'promise'`, `personId`, `direction`) |
+| `contacts` | **устаревшая**: перенесена в `notes` (`id: contact_<id>`, `type: 'meeting'`, `personId`, `meetingKind`, `next`) |
 | `kbSections` | разделы базы знаний пользователя: `name, icon (emoji), description, order` |
 | `kbPages` | страницы базы знаний: `sectionId, title, body (простая разметка: #, -, **, \`, [[Название]]), tags: string[], pinned` |
-| `ideas` | копилка идей (вкладка в «Заметках»): `title, body, status: 'new'\|'maybe'\|'inwork'\|'done'\|'dropped', impact 1-3, effort 1-3, tags: string[], pinned, projectId?` |
-| `events` | события календаря: `title, date, time 'HH:MM'?, endTime?, place, kind: 'meeting'\|'work'\|'personal'\|'health'\|'other', repeat: 'none'\|'daily'\|'weekdays'\|'weekly'\|'monthly', until (date)?, notes`; повторы считаются на лету (`occursOn` в calendar.js) |
-| `tasks` | `title, date (date|null = без даты/инбокс), priority: 1 (высокий)\|2\|3, goalId?, projectId?, streamId?, focusDate? (дата, когда задача в «фокусе дня» на главной, до 3 штук), timeless? (бессрочная: без даты, живёт в отдельном списке, не в инбоксе), done bool, doneAt?, notes, estimateMin?, recurring?: 'daily'\|'weekly'\|null` |
-| `checkins` | `date (уникальна), mood 1-5, energy 1-5, stress 1-5, confidence 1-5 (уверенность в себе), symptoms: string[], weight?, notes` |
+| `ideas` | **устаревшая**: перенесена в `notes` (`id: idea_<id>`, `type: 'idea'`, `status, impact, effort, projectId`) |
+| `events` | события календаря: `title, date, time 'HH:MM'?, endTime?, place, kind: 'meeting'\|'work'\|'personal'\|'health'\|'other', repeat: 'none'\|'daily'\|'weekdays'\|'weekly'\|'monthly', until (date)?, notes, personId? (встреча с человеком → «следующая встреча» в Shadow и карточке)`; повторы считаются на лету (`occursOn` в model.js) |
+| `tasks` | **единая модель задачи**: `title, notes, date (date\|null = инбокс), time 'HH:MM'?, priority 1\|2\|3, done, doneAt?, projectId?, streamId?, goalId?, personId?, source: 'manual'\|'ceo'\|'promise'\|'project'\|'meeting'\|'assistant', direction: 'mine'\|'theirs' («мне обещали» — не моё дело, но видно у человека/в Shadow/в календаре), tags[], estimateMin?, recurring?, checklist[{id,title,done}], focusDate?, timeless?, result? (что ответила), receivedAt?`. Задача от CEO = `source: ceo, personId: <CEO>` |
+| `checkins` | **единственный источник** самочувствия: `date (уникальна), mood 1-5, energy 1-5, stress 1-5, confidence 1-5, symptoms: string[], weight?, notes` |
 | `labTests` | `date, name, value (number), unit, refLow?, refHigh?, notes` |
 | `healthTodos` | `title, date?, type: 'appointment'\|'test'\|'other', done bool, notes` |
 | `medications` | `name, dose, times: ('morning'\|'day'\|'evening')[], active bool, notes` |
@@ -56,18 +56,26 @@ export async function render(root, { params, navigate, page }) {
 | `foods` | библиотека продуктов: `name, kcal, protein, fat, carbs` — всё **на 100 г**; `portionGrams?` (стандартная порция) |
 | `meals` | `date, mealType: 'breakfast'\|'lunch'\|'dinner'\|'snack', name, grams, kcal, protein, fat, carbs` (итого за запись, уже умноженное), `foodId?` |
 | `dayLogs` | `date (уникальна), waterMl, steps` |
-| `habits` | `name, icon (emoji), color, days: number[] (0=пн..6=вс; пусто = ежедневно), target (раз в день, по умолчанию 1), archived bool, order` |
+| `habits` | `name, icon (emoji), color, days: number[] (0=пн..6=вс; пусто = ежедневно), target, archived, order, auto?: { kind: 'water'\|'workout'\|'study'\|'sleep'\|'steps'\|'task', target?, keyword?, areaId? }` — при `auto` выполнение считается из данных дня (`habitStatus` в model.js) |
 | `habitLogs` | `habitId, date, count` |
-| `sleepLogs` | `date (дата пробуждения, уникальна), bedTime 'HH:MM', wakeTime 'HH:MM', hours (number), quality 1-5, energy 1-5, notes` |
+| `sleepLogs` | **единственный источник** сна: `date (дата пробуждения, уникальна), bedTime, wakeTime, hours, quality 1-5, notes`; `energy` больше не пишется (читается как запасное) |
 | `books` | устаревшая коллекция; один раз переносится в `notes` (id `book_<id>`), страница не показывает |
-| `notes` | единые заметки: `kind: 'summary'\|'idea'\|'quote', sourceType: 'book'\|'article'\|'podcast'\|'video'\|'course'\|'thought'\|'other', sourceTitle, sourceAuthor, sourceUrl, title, body, tags: string[] (нижний регистр), pinned, rating 1-5?, date`; старые поля `bookId/areaId` сохраняются |
+| `notes` | **единая модель заметки**: `type: 'note'\|'idea'\|'recommendation'\|'meeting'\|'insight'\|'project-log', title, body, date, tags[] (нижний регистр), personId?, projectId?, goalId?, learningItemId?, pinned, quote (показывать как цитату при включённых посланиях), kbPageId?`; поля источника `sourceType: 'book'\|'article'\|'podcast'\|'video'\|'course'\|'thought'\|'other', sourceTitle, sourceAuthor, sourceUrl, rating?, kind: 'summary'\|'idea'\|'quote'`; для идей `status: 'new'\|'maybe'\|'inwork'\|'done'\|'dropped', impact 1-3, effort 1-3`; для встреч `meetingKind: 'meeting'\|'call'\|'chat'\|'other', next` |
 | `transactions` | `date, type: 'income'\|'expense', amount (number), category, note` |
 | `budgets` | `category, monthlyLimit` |
 | `financeGoals` | `title, target, saved, deadline?` |
 | `journal` | `date (уникальна), wentWell, improve, gratitude, lessons, highlight, mood 1-5` |
 | `weeklyReviews` | `weekStart (date пн), wins, challenges, nextFocus, rating 1-5` |
 
-Настройки: `db.settings()` → `{ name, theme, visionStatement, notesV (версия миграции заметок), layouts (раскладки страниц), kcalTarget, proteinTarget, fatTarget, carbsTarget, waterTarget, sleepTarget, stepsTarget, currency, learningWeeklyMinutes }`.
+Настройки: `db.settings()` → `{ name, theme, visionStatement, notesV, unifyV (версия миграции к единым моделям), layouts (раскладки страниц), tone: 'neutral'|'support'|'business', quotes (послания вкл/выкл, по умолчанию выкл), eveningFrom, preset: 'minimal'|'work'|'health'|'full'|'custom', modules: { pageId: 'on'|'hidden'|'off' }, mobileTab ('work' или id раздела), aiFab, ceoPersonId, kcalTarget, proteinTarget, fatTarget, carbsTarget, waterTarget, sleepTarget, stepsTarget, currency, learningWeeklyMinutes }`.
+
+## Единые модели и миграции (с v21)
+
+- `src/model.js` — общая доменная логика: `agendaOn(d)` (события, задачи, ожидания, дедлайны, медицина на дату), `nextEvent()`, `nextMeetingWith(personId)`, `upcomingDeadlines()`, `overdueItems()`, `addTask/toggleTask/setTaskDone`, `addNote`, `projectProgress(p)` (из задач/стримов), `goalProgress(g)` (из KR или задач), `habitStatus(h, d)` (ручная отметка или авто из данных), `checkinOn/setCheckin/sleepOn/setSleepHours/energyOn`, `addWater/addSteps/addTransaction`, `ceoPerson()/ensureCeoPerson()`, `lastContactOf(personId)` (из заметок type meeting), `tone()/quotesOn()/addressing()`, `moduleOn(pageId)`.
+- `src/migrate.js` — `runMigrations()` при старте, после импорта JSON и после слияния синхронизации. Идемпотентна: детерминированные id (`ceo_`, `commit_`, `shadow_`, `idea_`, `contact_`), проверка tombstones, старые коллекции не удаляются (поэтому старый JSON импортируется без потерь).
+- `src/capture.js` — окно «Записать» (кнопка «+»): текст → тип угадывается (время → событие, сумма → расход, «выпила 500» → активность), контекст раздела даёт человека/проект/дату, «Подробнее» раскрывает поля.
+- Shadow (`src/pages/shadow.js`) ничего не хранит: показывает `tasks.personId = CEO`, `notes.personId = CEO`, `events.personId = CEO`.
+- Навигация (`src/app.js`): группы Основное/Работа/Знания/Личное/Ресурсы сворачиваются; на телефоне внизу Сегодня · План · «+» · Работа (хаб: проекты/люди/Shadow, переключатель над страницей) · Ещё. Алиасы маршрутов: `#/goals` → `#/plan?tab=goals`, `#/calendar` → `#/plan?tab=week`, `#/books` → `#/notes`. Настройка страницы — пункт меню «•••» (`pageMenu` в ui.js, пункт `action="customize"`).
 
 Общая форма задачи — `src/pages/task-modal.js` (`openTaskModal(task, { defaults, lockProject })`), используется в целях и внутри проекта. Страница проекта: `#/projects?id=<id>` (стримы, задачи по стримам, журнал).
 

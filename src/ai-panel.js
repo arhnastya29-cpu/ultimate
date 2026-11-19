@@ -2,6 +2,7 @@
 // голосовой ввод. Ответы приходят потоком; действия помощника показываются отдельной строкой.
 import { esc, icon, el, toast } from './ui.js';
 import { ask, aiReady, chatHistory, clearChat, quickPrompts, aiConfig } from './ai.js';
+import { db } from './db.js';
 
 let panel = null;
 let currentPage = 'today';
@@ -154,9 +155,21 @@ export function closePanel() {
 }
 export function togglePanel() { if (!panel || panel.hidden) openPanel(); else closePanel(); }
 
+// Плавающая кнопка показывается только когда ключ настроен и кнопка не отключена в настройках.
+// Без ключа помощник доступен из палитры ⌘K / ⌘J и из настроек, но не занимает место на экране.
+let fab = null;
+export function refreshFab() {
+  const want = aiReady() && db.settings().aiFab !== false;
+  if (want && !fab) {
+    fab = el(`<button type="button" class="ai-fab" aria-label="Помощник Claude" title="Помощник (⌘J)">${icon('zap')}</button>`);
+    fab.addEventListener('click', () => togglePanel());
+    document.body.appendChild(fab);
+  } else if (!want && fab) { fab.remove(); fab = null; }
+}
 export function initAiPanel() {
-  const fab = el(`<button type="button" class="ai-fab" aria-label="Помощник" data-tip="Помощник">${icon('zap')}</button>`);
-  fab.addEventListener('click', () => togglePanel());
-  document.body.appendChild(fab);
+  refreshFab();
+  db.subscribe((col) => { if (col === 'settings' || col === '*') refreshFab(); });
+  window.addEventListener('storage', refreshFab);
+  window.addEventListener('ultimate:ai', refreshFab);
   document.addEventListener('keydown', (e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'j') { e.preventDefault(); togglePanel(); } });
 }

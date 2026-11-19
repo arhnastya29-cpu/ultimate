@@ -1,0 +1,101 @@
+/* Страницы «Тело» и «Финансы»: здоровье, сон, питание, тренировки, финансы.
+   Правила — docs/PAGE-GUIDE.md: заголовок → дата → список/ввод → быстрое добавление → фильтры → аналитика. */
+
+/* --- шапка: компактный выбор даты, одно главное действие, меню «•••» --- */
+.body-page .page-head .actions { align-items: center; }
+.body-page .dnav { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.body-page .dnav .chip { min-height: 36px; }
+.body-page .dnav input[type="date"] { min-height: 36px; }
+/* Кнопка-шестерёнка добавляется автоматически (blocks.js); на этих страницах её заменяет пункт меню «Настроить страницу». */
+.body-page .page-head .actions:has(.pmenu) > [data-customize] { display: none; }
+
+/* --- строка сводки под шапкой --- */
+.body-page .stat-line { margin: -10px 0 18px; }
+.body-page .stat-line b { font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+
+/* --- ряд быстрого добавления: чипы переносятся, не обрезаются --- */
+.body-page .quick-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.body-page .quick-row .chip { display: inline-flex; align-items: center; gap: 5px; min-height: 38px; }
+.body-page .quick-row .chip svg { width: 13px; height: 13px; }
+.body-page .quick-row .chip.ghost { border-style: dashed; }
+
+/* --- фильтры: чипы + select в одну переносимую строку --- */
+.body-page .filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 10px; }
+.body-page .filters .chips { flex-wrap: wrap; overflow: visible; padding: 0; margin: 0; mask-image: none; -webkit-mask-image: none; }
+.body-page .filters select.input { width: auto; padding: 7px 10px; font-size: 13px; min-height: 36px; }
+
+/* --- аналитика: раскрываемые блоки --- */
+.body-page details.acc.card > summary { min-height: 44px; margin: -4px 0; }
+.body-page details.acc.card > summary .chev { width: 28px; height: 28px; flex-shrink: 0; transition: transform .25s var(--ease); pointer-events: none; }
+.body-page details.acc.card[open] > summary .chev { transform: rotate(180deg); }
+.body-page details.acc.card > summary .sum-sub { font-weight: 400; color: var(--fg-3); font-size: 12.5px; margin-left: auto; }
+.body-page details.acc.card > .acc-body { margin-top: 14px; display: flex; flex-direction: column; gap: 14px; }
+.body-page details.acc.card > .acc-body > .card { background: var(--bg); box-shadow: none; }
+.body-page .acc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; align-items: start; }
+.body-page details.acc .tiny.muted.acc-hint { margin-top: 8px; }
+
+/* --- карточка дня (чек-ин / сон): оценки в ряд, крупные кнопки --- */
+.body-page .day-card .row.top { gap: 14px 18px; }
+.body-page .day-card .pill.link { cursor: pointer; }
+.body-page .day-card .hint-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; font-size: 12.5px; color: var(--fg-2); }
+.body-page .day-card .hint-row a { color: var(--accent); font-weight: 600; }
+
+/* --- питание --- */
+.body-page .meal-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+.body-page .meal-head h3 { margin: 0; }
+.body-page .meal-head .row { flex-shrink: 0; gap: 10px; }
+.body-page .macro-grid { display: flex; flex-direction: column; gap: 10px; min-width: 180px; }
+.body-page .water-btns { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; align-items: center; }
+
+/* --- тренировки: шаблоны как чипы быстрого старта --- */
+.body-page .tpl-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.body-page .tpl-chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 7px 8px 7px 12px; font-size: 12.5px; font-weight: 500; color: var(--fg); min-height: 38px; }
+.body-page .tpl-chip .tpl-start { display: inline-flex; align-items: center; gap: 4px; background: none; border: 0; color: var(--fg); font-weight: 600; font-size: 12.5px; padding: 0; min-height: 24px; }
+.body-page .tpl-chip .tpl-start svg { width: 12px; height: 12px; color: var(--accent); }
+.body-page .tpl-chip .icon-btn.sm { width: 24px; height: 24px; border: 0; background: var(--surface-2); }
+.body-page .tpl-chip .icon-btn.sm svg { width: 12px; height: 12px; }
+.body-page .pr-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.body-page .pr-item { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-s); padding: 10px 12px; min-width: 0; }
+.body-page .pr-item .value { font-family: var(--font-num); font-weight: 600; font-size: 20px; margin-top: 2px; }
+.body-page .pr-item .value small { font-size: 12px; color: var(--fg-2); margin-left: 3px; font-weight: 500; }
+
+/* --- финансы --- */
+.body-page .tx-table td:first-child { white-space: nowrap; }
+.body-page .month-nav { display: flex; align-items: center; gap: 6px; }
+.body-page .month-nav .chip { min-height: 36px; }
+.body-page .fin-quick .seg { flex-shrink: 0; }
+
+/* --- общие мелочи --- */
+.body-page .section-title { margin-top: 22px; }
+.body-page .list-item .main[data-todo-edit], .body-page .list-item .main[data-pick] { cursor: pointer; }
+.body-page .list-item .main[data-todo-edit]:focus-visible, .body-page .list-item .main[data-pick]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+.body-page .empty-act { margin: 0; }
+.body-page .card > .empty-act { border: 0; padding: 12px 0 6px; }
+
+/* --- телефон --- */
+@media (max-width: 860px) {
+  .body-page .page-head .actions { gap: 8px; }
+  /* Ряд 1: ‹ дата › и меню «•••»; ряд 2: поле даты; ряд 3: главная кнопка во всю ширину */
+  .body-page .dnav, .body-page .month-nav { flex: 1 1 200px; }
+  .body-page .dnav .chip, .body-page .month-nav .chip { flex: 1 1 auto; text-align: center; min-height: 44px; }
+  .body-page .dnav .icon-btn.sm, .body-page .month-nav .icon-btn.sm { width: 44px; height: 44px; }
+  .body-page .dnav input[type="date"] { flex: 1 1 100%; min-height: 44px; }
+  .body-page .page-head .actions:has(.dnav, .month-nav) > .btn { flex: 1 1 100%; order: 5; }
+  .body-page .page-head .actions .pmenu { margin-left: auto; }
+  .body-page .page-head .actions .pmenu .icon-btn.sm { width: 44px; height: 44px; }
+  .body-page .stat-line { margin: -4px 0 16px; }
+  .body-page .quick-row .chip, .body-page .tpl-chip, .body-page .water-btns .btn { min-height: 44px; }
+  .body-page .filters select.input { min-height: 44px; flex: 1 1 160px; }
+  .body-page .filters .chip { min-height: 44px; }
+  .body-page .rating button { width: 42px; height: 42px; }
+  .body-page .acc-grid { grid-template-columns: 1fr; }
+  .body-page .section-title .btn.sm { min-height: 40px; }
+  .body-page .list-item .icon-btn.sm { width: 40px; height: 40px; }
+  .body-page .day-card .btn[type="submit"] { width: 100%; justify-content: center; min-height: 46px; }
+  .body-page .meal-head .row { gap: 6px; }
+  .body-page .tbl th, .body-page .tbl td { padding: 9px 8px; }
+}
+@media (max-width: 480px) {
+  .body-page .pr-grid { grid-template-columns: 1fr 1fr; }
+  .body-page .ring { width: 84px; height: 84px; }
+}

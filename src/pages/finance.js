@@ -1,8 +1,9 @@
 import { db } from '../db.js';
 import {
   esc, icon, modal, field, formRow, formData, toast, today, fmtDate, fmtMonth, fmtMoney, fmtNum, on,
-  progressBar, barChart, lineChart, emptyState, sum, sortBy, monthKey, plural,
+  progressBar, barChart, lineChart, emptyState, emptyAction, statLine, pageMenu, sum, sortBy, monthKey, plural,
 } from '../ui.js';
+import { addTransaction } from '../model.js';
 
 export const title = 'Финансы';
 
@@ -169,7 +170,13 @@ export async function render(root) {
   if (filterCat) shown = shown.filter(t => catKey(t.category) === filterCat);
   shown = [...shown].sort((a, b) => b.date.localeCompare(a.date) || String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
 
-  const statTile = (label, value, sub, cls = '') => `<div class="stat"><div class="label">${label}</div><div class="value ${cls}">${value}</div><div class="sub">${sub}</div></div>`;
+  const stats = statLine([
+    income ? `Доходы <b class="good">${money(income)}</b>` : '',
+    expense ? `Расходы <b class="bad">${money(expense)}</b>` : '',
+    tx.length ? `Баланс <b class="${balance >= 0 ? 'good' : 'bad'}">${signedMoney(balance)}</b>` : '',
+    expense && forecast != null ? `прогноз расходов на месяц <b>${money(forecast)}</b>` : '',
+    expense && elapsed && !isCurrent ? `в среднем <b>${money(avgDay)}</b> в день` : '',
+  ]);
 
   const goalRow = (g) => {
     const target = Number(g.target) || 0, saved = Number(g.saved) || 0;
@@ -180,7 +187,7 @@ export async function render(root) {
     else if (avgNet > 0) { const m = Math.ceil(left / avgNet); eta = `≈ ${m} ${plural(m, 'месяц', 'месяца', 'месяцев')} при текущем темпе`; }
     else eta = 'нет данных для прогноза';
     return `<div class="list-item">
-      <div class="main clickable" data-goal-edit="${esc(g.id)}" style="cursor:pointer">
+      <div class="main clickable" data-goal-edit="${esc(g.id)}" tabindex="0" role="button" style="cursor:pointer">
         <div class="row between"><div class="title">${esc(g.title)}</div><span class="small bold ${left <= 0 ? 'good' : ''}">${money(saved)} <span class="muted">/ ${money(target)}</span></span></div>
         <div style="margin:6px 0 4px">${progressBar(saved, target, left <= 0 ? 'good' : '')}</div>
         <div class="sub">${pct}%${left > 0 ? ` · осталось ${money(left)}` : ''}${g.deadline ? ` · до ${esc(fmtDate(g.deadline, { relative: false, year: true }))}` : ''} · ${eta}</div>
@@ -189,28 +196,59 @@ export async function render(root) {
     </div>`;
   };
 
+  const txTable = `<div class="scroll-x"><table class="tbl tx-table">
+    <thead><tr><th>Дата</th><th>Категория</th><th>Заметка</th><th class="num">Сумма</th></tr></thead>
+    <tbody>${shown.map(t => `<tr class="clickable" data-tx-edit="${esc(t.id)}">
+      <td>${esc(fmtDate(t.date))}</td>
+      <td><span class="tag">${esc(catKey(t.category))}</span></td>
+      <td class="muted">${esc(t.note || '')}</td>
+      <td class="num bold ${t.type === 'income' ? 'good' : 'bad'}" style="white-space:nowrap">${t.type === 'income' ? '+' : '−'}${money(amt(t))}</td>
+    </tr>`).join('')}</tbody>
+  </table></div>`;
+
   root.innerHTML = `
-  <div data-page="finance">
+  <div class="body-page" data-page="finance">
     <div class="page-head">
       <div><div class="eyebrow">Ресурсы</div><h1>Финансы</h1></div>
-      <div class="actions row" style="gap:6px">
-        <button type="button" class="icon-btn sm" data-month="prev" aria-label="Предыдущий месяц">${icon('chevronLeft')}</button>
-        <button type="button" class="chip ${isCurrent ? 'active' : ''}" data-month="today">${esc(fmtMonth(month))}</button>
-        <button type="button" class="icon-btn sm" data-month="next" aria-label="Следующий месяц">${icon('chevronRight')}</button>
+      <div class="actions">
+        <div class="month-nav">
+          <button type="button" class="icon-btn sm" data-month="prev" aria-label="Предыдущий месяц">${icon('chevronLeft')}</button>
+          <button type="button" class="chip ${isCurrent ? 'active' : ''}" data-month="today">${esc(fmtMonth(month))}</button>
+          <button type="button" class="icon-btn sm" data-month="next" aria-label="Следующий месяц">${icon('chevronRight')}</button>
+        </div>
+        <button type="button" class="btn" data-action="quick-expense">${icon('plus')} Расход</button>
+        ${pageMenu([
+          { label: 'Доход', action: 'quick-income', icon: 'arrowUp' },
+          { label: 'Бюджет на категорию', action: 'budget-add', icon: 'target' },
+          { label: 'Финансовая цель', action: 'goal-add', icon: 'star' },
+          { label: 'Настроить страницу', action: 'customize', icon: 'sliders' },
+        ])}
       </div>
     </div>
+    ${stats}
 
-    <div class="grid-4">
-      ${statTile('Доходы', money(income), `${incomes.length} ${plural(incomes.length, 'операция', 'операции', 'операций')}`, 'good')}
-      ${statTile('Расходы', money(expense), `${expenses.length} ${plural(expenses.length, 'операция', 'операции', 'операций')}`, 'bad')}
-      ${statTile('Баланс', signedMoney(balance), income ? `потрачено ${Math.round((expense / income) * 100)}% дохода` : 'доходов пока нет', balance >= 0 ? 'good' : 'bad')}
-      ${statTile('Расходы в день', money(avgDay), forecast != null ? `прогноз на месяц: <b>${money(forecast)}</b>` : `в среднем за ${elapsed || dim} ${plural(elapsed || dim, 'день', 'дня', 'дней')}`)}
-    </div>
-
-    <div class="grid-2" style="align-items:start;margin-top:12px">
+    <div class="grid-2" style="align-items:start">
       <div class="stack">
-        <form class="card form" data-quick>
-          <div class="row between">
+        <div class="card" data-block="transactions" data-block-title="Операции">
+          <div class="row between" style="margin-bottom:${tx.length ? 10 : 6}px"><h3 style="margin:0">Операции · ${esc(fmtMonth(month))}${tx.length ? ` <span class="muted small">· ${shown.length}</span>` : ''}</h3></div>
+          ${tx.length ? `<div class="filters">
+            <div class="chips">
+              <button type="button" class="chip ${filterType === 'all' ? 'active' : ''}" data-ftype="all">Все</button>
+              <button type="button" class="chip ${filterType === 'expense' ? 'active' : ''}" data-ftype="expense">Расходы</button>
+              <button type="button" class="chip ${filterType === 'income' ? 'active' : ''}" data-ftype="income">Доходы</button>
+            </div>
+            ${monthCats.length > 1 || filterCat ? `<select class="input" data-fcat aria-label="Категория">
+              <option value="">Все категории</option>
+              ${monthCats.map(c => `<option value="${esc(c)}" ${c === filterCat ? 'selected' : ''}>${esc(c)}</option>`).join('')}
+            </select>` : ''}
+          </div>` : ''}
+          ${shown.length ? txTable
+            : tx.length ? emptyState('По этому фильтру ничего нет', '💸')
+            : emptyAction({ text: 'Записывайте расходы и доходы: будет видно, куда уходят деньги и сколько остаётся', action: 'quick-expense', label: 'Расход' })}
+        </div>
+
+        <form class="card form fin-quick" data-quick data-block="quick" data-block-title="Быстрая запись">
+          <div class="row between wrap" style="gap:8px">
             <h3 style="margin:0">Быстрая запись</h3>
             <div class="seg">
               <button type="button" data-qtype="expense" class="${quickType === 'expense' ? 'active' : ''}">Расход</button>
@@ -230,13 +268,15 @@ export async function render(root) {
           <datalist id="fin-cats-income">${options(allCategories('income'))}</datalist>
           <button class="btn" type="submit">${icon('plus')} Добавить</button>
         </form>
+      </div>
 
-        <div class="card">
+      <div class="stack">
+        <div class="card" data-block="budgets" data-block-title="Бюджеты на месяц">
           <div class="row between" style="margin-bottom:8px">
             <h3 style="margin:0">Бюджеты на месяц</h3>
-            <button type="button" class="btn sm secondary" data-budget-add>${icon('plus')} Бюджет</button>
+            ${budgetRows.length ? `<button type="button" class="btn sm secondary" data-action="budget-add">${icon('plus')} Бюджет</button>` : ''}
           </div>
-          ${budgetRows.length ? `<div class="list">${budgetRows.map(b => `<div class="list-item clickable" data-budget-edit="${esc(b.id)}">
+          ${budgetRows.length ? `<div class="list">${budgetRows.map(b => `<div class="list-item clickable" data-budget-edit="${esc(b.id)}" tabindex="0" role="button">
               <div class="main">
                 <div class="row between small"><span class="bold">${esc(b.category)}</span><span class="${barCls(b.pct)}">${money(b.spent)} <span class="muted">/ ${money(b.limit)}</span></span></div>
                 <div style="margin:6px 0 4px">${progressBar(b.spent, b.limit, barCls(b.pct))}</div>
@@ -245,78 +285,56 @@ export async function render(root) {
             </div>`).join('')}</div>
             <div class="divider" style="margin:10px 0"></div>
             <div class="row between small"><span class="muted">Остаток по бюджетам</span><span class="bold ${budgetLeft >= 0 ? 'good' : 'bad'}">${signedMoney(budgetLeft)}</span></div>`
-          : emptyState('Задайте лимиты по категориям — и будет видно, сколько осталось', '🎯')}
+          : emptyAction({ text: 'Лимит по категории покажет, сколько ещё можно потратить в этом месяце', action: 'budget-add', label: 'Бюджет' })}
         </div>
 
-        <div class="card">
+        <div class="card" data-block="goals" data-block-title="Финансовые цели">
           <div class="row between" style="margin-bottom:8px">
             <h3 style="margin:0">Финансовые цели</h3>
-            <button type="button" class="btn sm secondary" data-goal-add>${icon('plus')} Цель</button>
+            ${goals.length ? `<button type="button" class="btn sm secondary" data-action="goal-add">${icon('plus')} Цель</button>` : ''}
           </div>
           ${goals.length ? `<div class="list">${goals.map(goalRow).join('')}</div>
             <div class="tiny faint" style="margin-top:8px">Прогноз — по среднему чистому доходу за 6 месяцев${avgNet > 0 ? ` (${signedMoney(avgNet)} в месяц)` : ''}.</div>`
-          : emptyState('Накопления на что-то важное: добавьте цель и пополняйте её', '🏦')}
-        </div>
-      </div>
-
-      <div class="stack">
-        <div class="card">
-          <h3>Расходы по категориям</h3>
-          ${catRows.length ? `<div class="stack" style="gap:8px">${catRows.map((r, i) => {
-            const pct = expense ? (r.total / expense) * 100 : 0;
-            const color = `var(--c${(i % 8) + 1})`;
-            return `<div>
-              <div class="row between small">
-                <span class="row" style="gap:6px;min-width:0"><i class="color-dot" style="background:${color}"></i><span class="ellipsis">${esc(r.category)}</span></span>
-                <span style="white-space:nowrap"><b>${money(r.total)}</b> <span class="muted tiny">${Math.round(pct)}%</span></span>
-              </div>
-              <div class="bar thin" style="margin-top:4px"><i style="width:${pct.toFixed(1)}%;background:${color}"></i></div>
-            </div>`;
-          }).join('')}</div>` : emptyState('В этом месяце расходов нет', '🧾')}
-          <div class="divider" style="margin:14px 0 10px"></div>
-          <div class="label caps" style="margin-bottom:6px">Расходы по дням</div>
-          ${barChart(daily, { height: 110, color: 'var(--bad)' })}
-        </div>
-
-        <div class="card">
-          <div class="row between wrap" style="margin-bottom:6px">
-            <h3 style="margin:0">Динамика за 6 месяцев</h3>
-            <div class="legend"><span><i class="sw" style="background:var(--good)"></i>Доходы</span><span><i class="sw" style="background:var(--bad)"></i>Расходы</span></div>
-          </div>
-          ${lineChart([
-            { points: trend.map((m, i) => ({ x: i, y: m.income })), color: 'var(--good)' },
-            { points: trend.map((m, i) => ({ x: i, y: m.expense })), color: 'var(--bad)' },
-          ], trend.map(m => monthShort(m.key)), { height: 150, min: 0 })}
-          <div class="row wrap tiny muted" style="gap:12px;margin-top:6px">${trend.map(m => `<span>${esc(monthShort(m.key))}: <span class="${m.income - m.expense >= 0 ? 'good' : 'bad'}">${m.n ? signedMoney(m.income - m.expense) : '—'}</span></span>`).join('')}</div>
+          : emptyAction({ text: 'Накопления на что-то важное: цель, сумма и срок — пополняйте по мере возможности', action: 'goal-add', label: 'Цель' })}
         </div>
       </div>
     </div>
 
-    <div class="card" style="margin-top:12px">
-      <div class="row between wrap" style="margin-bottom:10px;gap:10px">
-        <h3 style="margin:0">Операции <span class="muted small">· ${shown.length}</span></h3>
-        <div class="row wrap" style="gap:8px">
-          <div class="chips">
-            <button type="button" class="chip ${filterType === 'all' ? 'active' : ''}" data-ftype="all">Все</button>
-            <button type="button" class="chip ${filterType === 'expense' ? 'active' : ''}" data-ftype="expense">Расходы</button>
-            <button type="button" class="chip ${filterType === 'income' ? 'active' : ''}" data-ftype="income">Доходы</button>
+    ${all.length ? `<details class="acc card" data-block="analytics" data-block-title="Аналитика" style="margin-top:14px">
+      <summary><span class="icon-btn sm chev">${icon('chevronDown')}</span> Аналитика <span class="sum-sub">категории · по дням · 6 месяцев</span></summary>
+      <div class="acc-body">
+        <div class="acc-grid">
+          <div class="card">
+            <h3>Расходы по категориям</h3>
+            ${catRows.length ? `<div class="stack" style="gap:8px">${catRows.map((r, i) => {
+              const pct = expense ? (r.total / expense) * 100 : 0;
+              const color = `var(--c${(i % 8) + 1})`;
+              return `<div>
+                <div class="row between small">
+                  <span class="row" style="gap:6px;min-width:0"><i class="color-dot" style="background:${color}"></i><span class="ellipsis">${esc(r.category)}</span></span>
+                  <span style="white-space:nowrap"><b>${money(r.total)}</b> <span class="muted tiny">${Math.round(pct)}%</span></span>
+                </div>
+                <div class="bar thin" style="margin-top:4px"><i style="width:${pct.toFixed(1)}%;background:${color}"></i></div>
+              </div>`;
+            }).join('')}</div>` : '<p class="tiny muted">В этом месяце расходов нет.</p>'}
+            ${expense ? `<div class="divider" style="margin:14px 0 10px"></div>
+            <div class="label caps" style="margin-bottom:6px">Расходы по дням</div>
+            ${barChart(daily, { height: 110, color: 'var(--bad)' })}` : ''}
           </div>
-          <select class="input" style="width:auto;padding:6px 10px;font-size:13px" data-fcat>
-            <option value="">Все категории</option>
-            ${monthCats.map(c => `<option value="${esc(c)}" ${c === filterCat ? 'selected' : ''}>${esc(c)}</option>`).join('')}
-          </select>
+          <div class="card">
+            <div class="row between wrap" style="margin-bottom:6px">
+              <h3 style="margin:0">Динамика за 6 месяцев</h3>
+              <div class="legend"><span><i class="sw" style="background:var(--good)"></i>Доходы</span><span><i class="sw" style="background:var(--bad)"></i>Расходы</span></div>
+            </div>
+            ${lineChart([
+              { points: trend.map((m, i) => ({ x: i, y: m.income })), color: 'var(--good)' },
+              { points: trend.map((m, i) => ({ x: i, y: m.expense })), color: 'var(--bad)' },
+            ], trend.map(m => monthShort(m.key)), { height: 150, min: 0 })}
+            <div class="row wrap tiny muted" style="gap:12px;margin-top:6px">${trend.map(m => `<span>${esc(monthShort(m.key))}: <span class="${m.income - m.expense >= 0 ? 'good' : 'bad'}">${m.n ? signedMoney(m.income - m.expense) : '—'}</span></span>`).join('')}</div>
+          </div>
         </div>
       </div>
-      ${shown.length ? `<div class="scroll-x"><table class="tbl">
-        <thead><tr><th>Дата</th><th>Категория</th><th>Заметка</th><th class="num">Сумма</th></tr></thead>
-        <tbody>${shown.map(t => `<tr class="clickable" data-tx-edit="${esc(t.id)}">
-          <td style="white-space:nowrap">${esc(fmtDate(t.date))}</td>
-          <td><span class="tag">${esc(catKey(t.category))}</span></td>
-          <td class="muted">${esc(t.note || '')}</td>
-          <td class="num bold ${t.type === 'income' ? 'good' : 'bad'}" style="white-space:nowrap">${t.type === 'income' ? '+' : '−'}${money(amt(t))}</td>
-        </tr>`).join('')}</tbody>
-      </table></div>` : emptyState(tx.length ? 'По этому фильтру ничего нет' : 'Операций за этот месяц пока нет — добавьте первую', '💸')}
-    </div>
+    </details>` : ''}
   </div>`;
 
   const page = root.firstElementChild;
@@ -333,11 +351,18 @@ export async function render(root) {
 
   // Быстрая запись
   const quick = page.querySelector('[data-quick]');
-  on(page, 'click', '[data-qtype]', (e, t) => {
-    quickType = t.dataset.qtype === 'income' ? 'income' : 'expense';
+  const setQuickType = (type) => {
+    quickType = type === 'income' ? 'income' : 'expense';
     quick.querySelectorAll('[data-qtype]').forEach(b => b.classList.toggle('active', b.dataset.qtype === quickType));
     quick.querySelector('[name="type"]').value = quickType;
     quick.querySelector('[name="category"]').setAttribute('list', `fin-cats-${quickType}`);
+  };
+  on(page, 'click', '[data-qtype]', (e, t) => setQuickType(t.dataset.qtype));
+  // Главное действие в шапке и кнопка пустого состояния: подготовить форму и поставить курсор в сумму.
+  on(page, 'click', '[data-action="quick-expense"], [data-action="quick-income"]', (e, t) => {
+    setQuickType(t.dataset.action === 'quick-income' ? 'income' : 'expense');
+    quick.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    setTimeout(() => quick.querySelector('[name="amount"]')?.focus(), 350);
   });
   quick.addEventListener('submit', (e) => {
     e.preventDefault();
@@ -346,20 +371,21 @@ export async function render(root) {
     if (!(d.amount > 0)) { toast('Укажите сумму'); return; }
     const date = d.date || today();
     const type = d.type === 'income' ? 'income' : 'expense';
-    db.add('transactions', { date, type, amount: round2(d.amount), category: catKey(d.category), note: d.note || '' });
+    addTransaction({ date, type, amount: round2(d.amount), category: catKey(d.category), note: d.note || '' });
     if (date.slice(0, 7) !== month) month = date.slice(0, 7);
     toast(type === 'income' ? `Доход добавлен: ${money(d.amount)}` : `Расход добавлен: ${money(d.amount)}`);
   });
 
   // Бюджеты
-  on(page, 'click', '[data-budget-add]', () => openBudgetModal(null, cur));
+  on(page, 'click', '[data-action="budget-add"]', () => openBudgetModal(null, cur));
   on(page, 'click', '[data-budget-edit]', (e, t) => {
     const b = db.get('budgets', t.dataset.budgetEdit);
     if (b) openBudgetModal(b, cur);
   });
+  on(page, 'keydown', '[data-budget-edit], [data-goal-edit]', (e, t) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); t.click(); } });
 
   // Цели
-  on(page, 'click', '[data-goal-add]', () => openGoalModal(null, cur));
+  on(page, 'click', '[data-action="goal-add"]', () => openGoalModal(null, cur));
   on(page, 'click', '[data-goal-edit]', (e, t) => {
     const g = db.get('financeGoals', t.dataset.goalEdit);
     if (g) openGoalModal(g, cur);

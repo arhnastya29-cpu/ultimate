@@ -1,5 +1,6 @@
 import { db } from '../db.js';
-import { esc, el, icon, field, formRow, formData, modal, toast, on, today, addDays, lastNDays, fmtDate, fmtNum, avg, sortBy, emptyState, checkBtn, lineChart, dateNav, weekdayShort, plural } from '../ui.js';
+import { esc, el, icon, field, formRow, formData, modal, toast, on, today, addDays, lastNDays, fmtDate, fmtNum, avg, sortBy, emptyState, emptyAction, statLine, pageMenu, checkBtn, lineChart, dateNav, weekdayShort, plural } from '../ui.js';
+import { checkinOn, setCheckin, sleepOn } from '../model.js';
 
 export const title = 'Здоровье';
 
@@ -11,7 +12,6 @@ const CONFIDENCE = ['🫣', '😟', '😐', '😎', '🦁'];
 const TODO_TYPES = { appointment: 'Приём', test: 'Анализ', other: 'Другое' };
 const TIMES = [['morning', 'Утро'], ['day', 'День'], ['evening', 'Вечер']];
 const dm = (d) => `${d.slice(8, 10)}.${d.slice(5, 7)}`;
-const tile = (label, value, sub = '') => `<div class="stat"><div class="label">${label}</div><div class="value">${value}</div>${sub ? `<div class="sub">${sub}</div>` : ''}</div>`;
 
 // Локальное состояние страницы (переживает перерисовку).
 let day = today();
@@ -143,10 +143,12 @@ function labModal(t) {
 export async function render(root, ctx) {
   const rerender = () => render(root, ctx);
 
-  // --- чек-ины
+  // --- чек-ины (единый источник: checkins через model.js)
   const checkins = db.all('checkins');
   const byDate = new Map(checkins.map(c => [c.date, c]));
-  const cur = byDate.get(day);
+  const cur = checkinOn(day);
+  const sleep = sleepOn(day);
+  const sleepH = sleep && sleep.hours != null && !isNaN(Number(sleep.hours)) ? Number(sleep.hours) : null;
   const last7 = lastNDays(7).map(d => byDate.get(d)).filter(Boolean);
   const e7 = last7.filter(c => c.energy), m7 = last7.filter(c => c.mood);
   const avgEnergy = e7.length ? avg(e7, c => c.energy) : null;
@@ -159,33 +161,22 @@ export async function render(root, ctx) {
 
   const days30 = lastNDays(30);
   const wPts = days30.map((d, i) => ({ x: i, y: byDate.get(d)?.weight != null && byDate.get(d)?.weight !== '' ? Number(byDate.get(d).weight) : null })).filter(p => p.y != null);
-  const weightChart = wPts.length >= 2
-    ? lineChart([{ points: wPts, color: 'var(--c5)' }], days30.map(dm))
-    : emptyState('Нужно минимум две записи веса за 30 дней', '⚖️');
-
   const days14 = lastNDays(14);
   const mk = (k) => days14.map((d, i) => ({ x: i, y: byDate.get(d)?.[k] ?? null })).filter(p => p.y != null);
   const energyPts = mk('energy'), moodPts = mk('mood'), stressPts = mk('stress'), confPts = mk('confidence');
-  const moodChart = (energyPts.length + moodPts.length + stressPts.length + confPts.length) > 0
-    ? lineChart([
-        { points: energyPts, color: 'var(--c2)' },
-        { points: moodPts, color: 'var(--c1)' },
-        { points: stressPts, color: 'var(--c4)' },
-        { points: confPts, color: 'var(--c3)' },
-      ], days14.map(weekdayShort), { min: 1, max: 5 })
-    : emptyState('Заполните чек-ин, чтобы увидеть динамику', '📈');
+  const moodPoints = energyPts.length + moodPts.length + stressPts.length + confPts.length;
 
   const activeSyms = new Set(cur?.symptoms || []);
   const allSyms = [...new Set([...SYMPTOMS, ...activeSyms])];
 
-  // --- медицинские дела
+  // --- медицинские дела (видны в повестке через agendaOn)
   const todos = db.all('healthTodos');
   const openTodos = sortBy(todos.filter(t => !t.done), t => t.date || '9999-99-99');
   const doneTodos = sortBy(todos.filter(t => t.done), t => t.doneAt || t.date || '', true);
   const todoRow = (t) => `
     <div class="list-item">
       ${checkBtn(!!t.done, `data-todo-toggle="${esc(t.id)}" aria-label="Выполнено"`)}
-      <div class="main" data-todo-edit="${esc(t.id)}" style="cursor:pointer">
+      <div class="main" data-todo-edit="${esc(t.id)}" tabindex="0" role="button">
         <div class="title ${t.done ? 'strike' : ''}">${esc(t.title)}</div>
         <div class="sub row wrap" style="gap:6px">
           <span class="pill">${esc(TODO_TYPES[t.type] || TODO_TYPES.other)}</span>
@@ -224,102 +215,108 @@ export async function render(root, ctx) {
     const series = sortBy(labs.filter(t => t.name === labFilter && t.value != null && !isNaN(Number(t.value))), t => t.date);
     const withRef = [...series].reverse().find(t => hasRef(t.refLow) || hasRef(t.refHigh));
     const unit = series.find(t => t.unit)?.unit || '';
-    labChart = `<div class="card" style="margin-top:12px">
+    labChart = `<div class="card" data-block="lab-chart" data-block-title="График анализа">
       <div class="row between wrap"><h3 style="margin:0">${esc(labFilter)}${unit ? ` <span class="muted small">(${esc(unit)})</span>` : ''}</h3>
         <span class="tiny muted">${withRef ? `Референс: ${esc(refText(withRef))}` : 'Референс не указан'}</span></div>
       ${series.length >= 2
         ? lineChart([{ points: series.map((t, i) => ({ x: i, y: Number(t.value) })), color: 'var(--c7)' }], series.map(t => dm(t.date)))
         : emptyState('Нужно минимум два результата, чтобы построить график', '🧪')}
     </div>`;
-  } else if (labNames.length) {
-    labChart = `<p class="tiny muted" style="margin-top:10px">Выберите показатель в фильтре, чтобы увидеть динамику.</p>`;
   }
 
-  root.innerHTML = `<div>
+  const stats = statLine([
+    avgEnergy != null ? `Энергия <b>${fmtNum(avgEnergy, 1)}</b>/5 за 7 дней` : '',
+    avgMood != null ? `Настроение <b>${fmtNum(avgMood, 1)}</b>/5` : '',
+    lastW ? `Вес <b>${fmtNum(lastW.weight, 1)}</b> кг${delta != null ? ` <span class="${delta > 0 ? 'warn' : delta < 0 ? 'good' : ''}">(${delta > 0 ? '+' : ''}${fmtNum(delta, 1)} за 30 дней)</span>` : ''}` : '',
+    streak ? `<b>${streak}</b> ${plural(streak, 'день', 'дня', 'дней')} подряд с чек-ином` : '',
+  ]);
+
+  const hasAnalytics = wPts.length >= 2 || moodPoints > 0;
+
+  root.innerHTML = `<div class="body-page" data-page="health">
     <div class="page-head">
       <div><div class="eyebrow">Тело</div><h1>Здоровье</h1></div>
-      <div class="actions">${dateNav(day)}</div>
+      <div class="actions">
+        <div class="dnav">${dateNav(day)}</div>
+        <button type="button" class="btn" data-action="add-todo">${icon('plus')} Дело</button>
+        ${pageMenu([
+          { label: 'Лекарство или добавка', action: 'add-med', icon: 'pill' },
+          { label: 'Анализ', action: 'add-lab', icon: 'flask' },
+          labs.length ? { label: 'Экспорт анализов в CSV', action: 'export-labs', icon: 'download' } : null,
+          { label: 'Настроить страницу', action: 'customize', icon: 'sliders' },
+        ])}
+      </div>
     </div>
+    ${stats}
 
-    <div class="grid-4">
-      ${tile('Энергия, 7 дней', avgEnergy != null ? `${fmtNum(avgEnergy, 1)}<small>/5</small>` : '—', e7.length ? `${e7.length} ${plural(e7.length, 'запись', 'записи', 'записей')}` : 'нет записей')}
-      ${tile('Настроение, 7 дней', avgMood != null ? `${fmtNum(avgMood, 1)}<small>/5</small>` : '—', m7.length ? `${m7.length} ${plural(m7.length, 'запись', 'записи', 'записей')}` : 'нет записей')}
-      ${tile('Вес', lastW ? `${fmtNum(lastW.weight, 1)}<small>кг</small>` : '—', lastW ? (delta != null ? `<span class="${delta > 0 ? 'warn' : delta < 0 ? 'good' : ''}">${delta > 0 ? '+' : ''}${fmtNum(delta, 1)} кг</span> за 30 дней` : esc(fmtDate(lastW.date))) : 'нет данных')}
-      ${tile('Дней подряд', String(streak), streak ? `${plural(streak, 'день', 'дня', 'дней')} с чек-ином` : 'сделайте чек-ин сегодня')}
-    </div>
-
-    <div class="grid-2" style="margin-top:12px;align-items:start">
-      <form class="card form" id="checkinForm">
-        <div class="row between"><h3 style="margin:0">Чек-ин · ${esc(fmtDate(day, { weekday: true }))}</h3>${cur ? '<span class="pill good">Записано</span>' : ''}</div>
-        <div class="row wrap top" style="gap:16px">
-          ${field({ name: 'mood', label: 'Настроение', type: 'rating', value: cur?.mood, labels: MOOD })}
-          ${field({ name: 'energy', label: 'Энергия', type: 'rating', value: cur?.energy, labels: ENERGY })}
-          ${field({ name: 'stress', label: 'Стресс', type: 'rating', value: cur?.stress, labels: STRESS })}
-          ${field({ name: 'confidence', label: 'Уверенность', type: 'rating', value: cur?.confidence, labels: CONFIDENCE })}
-        </div>
-        ${field({ name: 'weight', label: 'Вес, кг', type: 'number', value: cur?.weight ?? '', step: 0.1, min: 20, max: 300, placeholder: '70.5' })}
-        <div class="field"><label>Симптомы</label>
-          <div class="row wrap" data-symptoms style="gap:6px">
-            ${allSyms.map(s => `<button type="button" class="chip ${activeSyms.has(s) ? 'active' : ''}" data-sym="${esc(s)}">${esc(s)}</button>`).join('')}
-          </div>
-          <div class="row" style="margin-top:4px">
-            <input class="input" id="symInput" placeholder="Другой симптом…" maxlength="60">
-            <button type="button" class="btn sm secondary" data-action="add-sym" aria-label="Добавить симптом">${icon('plus')}</button>
-          </div>
-        </div>
-        ${field({ name: 'notes', label: 'Заметки', type: 'textarea', value: cur?.notes, rows: 2, placeholder: 'Как самочувствие?' })}
-        <button class="btn" type="submit">${icon('check')} Сохранить</button>
-      </form>
+    <div class="grid-2" style="align-items:start">
       <div class="stack">
-        <div class="card">
-          <div class="row between"><h3 style="margin:0">Вес, 30 дней</h3><span class="tiny muted">${wPts.length} ${plural(wPts.length, 'точка', 'точки', 'точек')}</span></div>
-          ${weightChart}
-        </div>
-        <div class="card">
-          <h3>Энергия, настроение, стресс, уверенность · 14 дней</h3>
-          ${moodChart}
-          <div class="legend" style="margin-top:8px">
-            <span><i class="sw" style="background:var(--c2)"></i>Энергия</span>
-            <span><i class="sw" style="background:var(--c1)"></i>Настроение</span>
-            <span><i class="sw" style="background:var(--c4)"></i>Стресс</span>
-            <span><i class="sw" style="background:var(--c3)"></i>Уверенность</span>
+        <form class="card form day-card" id="checkinForm" data-block="checkin" data-block-title="Чек-ин">
+          <div class="row between"><h3 style="margin:0">Чек-ин · ${esc(fmtDate(day, { weekday: true }))}</h3>${cur ? '<span class="pill good">Записано</span>' : ''}</div>
+          <div class="hint-row">
+            <span>${sleepH != null ? `Сон этой ночью: <b>${fmtNum(sleepH, 1)} ч</b>` : 'Сон за эту ночь не записан'}</span>
+            <a href="#/sleep">${sleepH != null ? 'Сон и энергия' : 'Записать сон'}</a>
           </div>
+          <div class="row wrap top" style="gap:16px">
+            ${field({ name: 'mood', label: 'Настроение', type: 'rating', value: cur?.mood, labels: MOOD })}
+            ${field({ name: 'energy', label: 'Энергия', type: 'rating', value: cur?.energy, labels: ENERGY })}
+            ${field({ name: 'stress', label: 'Стресс', type: 'rating', value: cur?.stress, labels: STRESS })}
+            ${field({ name: 'confidence', label: 'Уверенность', type: 'rating', value: cur?.confidence, labels: CONFIDENCE })}
+          </div>
+          ${field({ name: 'weight', label: 'Вес, кг', type: 'number', value: cur?.weight ?? '', step: 0.1, min: 20, max: 300, placeholder: '70.5' })}
+          <div class="field"><label>Симптомы</label>
+            <div class="row wrap" data-symptoms style="gap:6px">
+              ${allSyms.map(s => `<button type="button" class="chip ${activeSyms.has(s) ? 'active' : ''}" data-sym="${esc(s)}" aria-pressed="${activeSyms.has(s)}">${esc(s)}</button>`).join('')}
+            </div>
+            <div class="row" style="margin-top:4px">
+              <input class="input" id="symInput" placeholder="Другой симптом…" maxlength="60" aria-label="Другой симптом">
+              <button type="button" class="btn sm secondary" data-action="add-sym" aria-label="Добавить симптом">${icon('plus')}</button>
+            </div>
+          </div>
+          ${field({ name: 'notes', label: 'Заметки', type: 'textarea', value: cur?.notes, rows: 2, placeholder: 'Как самочувствие?' })}
+          <button class="btn" type="submit">${icon('check')} Сохранить</button>
+        </form>
+      </div>
+
+      <div class="stack">
+        <div class="card" data-block="meds" data-block-title="Лекарства и добавки">
+          <div class="row between" style="margin-bottom:6px">
+            <h3 style="margin:0">Лекарства и добавки</h3>
+            <div class="row" style="gap:8px">
+              ${slotsTotal ? `<span class="pill ${slotsTaken === slotsTotal ? 'good' : ''}">${slotsTaken} из ${slotsTotal}</span>` : ''}
+              ${meds.length ? `<button class="btn sm secondary" data-action="add-med">${icon('plus')} Лекарство</button>` : ''}
+            </div>
+          </div>
+          ${medGroups.length
+            ? medGroups.map(g => `<div class="label caps" style="margin:8px 0 2px">${g.l}</div><div class="list">${g.meds.map(m => medRow(m, g.k)).join('')}</div>`).join('')
+            : emptyAction({ text: meds.length ? 'Все лекарства отмечены как «не принимаю сейчас»' : 'Отмечайте приём лекарств и добавок по времени дня', action: 'add-med', label: 'Лекарство' })}
+          ${inactiveMeds.length ? `<details class="acc" style="margin-top:8px"><summary class="tiny muted">Не принимаю сейчас (${inactiveMeds.length})</summary><div class="list">${inactiveMeds.map(m => medRow(m, null)).join('')}</div></details>` : ''}
+        </div>
+
+        <div class="card" data-block="todos" data-block-title="Медицинские дела">
+          <div class="row between" style="margin-bottom:6px">
+            <h3 style="margin:0">Медицинские дела</h3>
+            ${todos.length ? `<button class="btn sm secondary" data-action="add-todo">${icon('plus')} Дело</button>` : ''}
+          </div>
+          ${openTodos.length ? `<div class="list">${openTodos.map(todoRow).join('')}</div>`
+            : emptyAction({ text: todos.length ? 'Открытых дел нет' : 'Приёмы врачей и анализы с датой попадут в повестку дня', action: 'add-todo', label: 'Дело' })}
+          ${doneTodos.length ? `<details class="acc" style="margin-top:8px"><summary class="tiny muted">Выполнено (${doneTodos.length})</summary><div class="list">${doneTodos.map(todoRow).join('')}</div></details>` : ''}
         </div>
       </div>
-    </div>
-
-    <div class="section-title"><h2>Медицинские дела</h2><button class="btn sm secondary" data-action="add-todo">${icon('plus')} Дело</button></div>
-    <div class="card">
-      ${openTodos.length ? `<div class="list">${openTodos.map(todoRow).join('')}</div>` : emptyState('Нет открытых дел — приёмы и анализы под контролем', '🩺')}
-      ${doneTodos.length ? `<details class="acc" style="margin-top:8px"><summary class="tiny muted">Выполнено (${doneTodos.length})</summary><div class="list">${doneTodos.map(todoRow).join('')}</div></details>` : ''}
-    </div>
-
-    <div class="section-title">
-      <h2>Лекарства и добавки</h2>
-      <div class="row">
-        ${slotsTotal ? `<span class="pill ${slotsTaken === slotsTotal ? 'good' : ''}">${slotsTaken} из ${slotsTotal}</span>` : ''}
-        <button class="btn sm secondary" data-action="add-med">${icon('plus')} Лекарство</button>
-      </div>
-    </div>
-    <div class="card">
-      ${medGroups.length
-        ? medGroups.map(g => `<div class="label caps" style="margin:8px 0 2px">${g.l}</div><div class="list">${g.meds.map(m => medRow(m, g.k)).join('')}</div>`).join('')
-        : emptyState('Добавьте лекарства или добавки, чтобы отмечать приём', '💊')}
-      ${inactiveMeds.length ? `<details class="acc" style="margin-top:8px"><summary class="tiny muted">Не принимаю сейчас (${inactiveMeds.length})</summary><div class="list">${inactiveMeds.map(m => medRow(m, null)).join('')}</div></details>` : ''}
     </div>
 
     <div class="section-title">
       <h2>Анализы</h2>
-      <div class="row wrap">
-        <select class="input" style="width:auto;padding:6px 10px;font-size:13px" data-lab-filter ${labNames.length ? '' : 'disabled'}>
+      ${labs.length ? `<button class="btn sm secondary" data-action="add-lab">${icon('plus')} Анализ</button>` : ''}
+    </div>
+    <div class="card ${shownLabs.length ? 'pad-0' : ''}" data-block="labs" data-block-title="Анализы">
+      ${labNames.length ? `<div class="filters" style="padding:${shownLabs.length ? '12px 12px 0' : '0'}">
+        <select class="input" data-lab-filter aria-label="Показатель">
           <option value="">Все показатели</option>
           ${labNames.map(n => `<option value="${esc(n)}" ${n === labFilter ? 'selected' : ''}>${esc(n)}</option>`).join('')}
         </select>
-        <button class="btn sm secondary" data-action="export-labs" ${labs.length ? '' : 'disabled'}>${icon('download')} Экспорт CSV</button>
-        <button class="btn sm secondary" data-action="add-lab">${icon('plus')} Анализ</button>
-      </div>
-    </div>
-    <div class="card pad-0">
+        ${!labFilter ? '<span class="tiny muted">Выберите показатель, чтобы увидеть динамику</span>' : ''}
+      </div>` : ''}
       ${shownLabs.length ? `<div class="scroll-x"><table class="tbl">
         <thead><tr><th>Дата</th><th>Показатель</th><th class="num">Значение</th><th>Референс</th><th>Статус</th></tr></thead>
         <tbody>${shownLabs.map(t => {
@@ -332,9 +329,36 @@ export async function render(root, ctx) {
             <td><span class="pill ${st.cls}">${st.text}</span></td>
           </tr>`;
         }).join('')}</tbody>
-      </table></div>` : emptyState(labs.length ? 'По этому показателю нет записей' : 'Добавьте результаты анализов, чтобы следить за динамикой', '🧪')}
+      </table></div>` : emptyAction({ text: labs.length ? 'По этому показателю нет записей' : 'Результаты анализов с референсами: видно, что в норме, и как меняется со временем', action: 'add-lab', label: 'Анализ' })}
     </div>
     ${labChart}
+
+    ${hasAnalytics ? `<details class="acc card" data-block="analytics" data-block-title="Динамика" style="margin-top:14px">
+      <summary><span class="icon-btn sm chev">${icon('chevronDown')}</span> Динамика <span class="sum-sub">вес за 30 дней · самочувствие за 14 дней</span></summary>
+      <div class="acc-body">
+        <div class="acc-grid">
+          ${wPts.length >= 2 ? `<div class="card">
+            <div class="row between"><h3 style="margin:0">Вес, 30 дней</h3><span class="tiny muted">${wPts.length} ${plural(wPts.length, 'точка', 'точки', 'точек')}</span></div>
+            ${lineChart([{ points: wPts, color: 'var(--c5)' }], days30.map(dm))}
+          </div>` : ''}
+          ${moodPoints > 0 ? `<div class="card">
+            <h3>Энергия, настроение, стресс, уверенность · 14 дней</h3>
+            ${lineChart([
+              { points: energyPts, color: 'var(--c2)' },
+              { points: moodPts, color: 'var(--c1)' },
+              { points: stressPts, color: 'var(--c4)' },
+              { points: confPts, color: 'var(--c3)' },
+            ], days14.map(weekdayShort), { min: 1, max: 5 })}
+            <div class="legend" style="margin-top:8px">
+              <span><i class="sw" style="background:var(--c2)"></i>Энергия</span>
+              <span><i class="sw" style="background:var(--c1)"></i>Настроение</span>
+              <span><i class="sw" style="background:var(--c4)"></i>Стресс</span>
+              <span><i class="sw" style="background:var(--c3)"></i>Уверенность</span>
+            </div>
+          </div>` : ''}
+        </div>
+      </div>
+    </details>` : ''}
   </div>`;
 
   const view = root.firstElementChild;
@@ -358,27 +382,26 @@ export async function render(root, ctx) {
   });
 
   // --- симптомы
-  on(view, 'click', '[data-sym]', (e, t) => t.classList.toggle('active'));
+  on(view, 'click', '[data-sym]', (e, t) => { t.classList.toggle('active'); t.setAttribute('aria-pressed', t.classList.contains('active')); });
   const symInput = view.querySelector('#symInput');
   const addSymptom = () => {
     const v = symInput.value.trim().toLowerCase();
     if (!v) return;
     const box = view.querySelector('[data-symptoms]');
     const existing = [...box.querySelectorAll('[data-sym]')].find(b => b.dataset.sym === v);
-    if (existing) existing.classList.add('active');
-    else box.appendChild(el(`<button type="button" class="chip active" data-sym="${esc(v)}">${esc(v)}</button>`));
+    if (existing) { existing.classList.add('active'); existing.setAttribute('aria-pressed', 'true'); }
+    else box.appendChild(el(`<button type="button" class="chip active" data-sym="${esc(v)}" aria-pressed="true">${esc(v)}</button>`));
     symInput.value = '';
   };
   on(view, 'click', '[data-action="add-sym"]', addSymptom);
   symInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addSymptom(); } });
 
-  // --- сохранение чек-ина
+  // --- сохранение чек-ина (единый источник mood/energy/stress/confidence — checkins)
   view.querySelector('#checkinForm').addEventListener('submit', (e) => {
     e.preventDefault();
     const d = formData(e.target);
     const symptoms = [...e.target.querySelectorAll('[data-sym].active')].map(b => b.dataset.sym);
-    const rec = { date: day, mood: d.mood, energy: d.energy, stress: d.stress, confidence: d.confidence, weight: d.weight, symptoms, notes: d.notes };
-    db.upsert('checkins', cur ? { id: cur.id, ...rec } : rec);
+    setCheckin(day, { mood: d.mood, energy: d.energy, stress: d.stress, confidence: d.confidence, weight: d.weight, symptoms, notes: d.notes });
     toast('Чек-ин сохранён');
   });
 
@@ -389,6 +412,7 @@ export async function render(root, ctx) {
     db.update('healthTodos', item.id, { done: !item.done, doneAt: !item.done ? today() : null });
   });
   on(view, 'click', '[data-todo-edit]', (e, t) => { const item = db.get('healthTodos', t.dataset.todoEdit); if (item) todoModal(item); });
+  on(view, 'keydown', '[data-todo-edit]', (e, t) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); t.click(); } });
 
   // --- лекарства
   on(view, 'click', '[data-action="add-med"]', () => medModal(null));

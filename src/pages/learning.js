@@ -1,7 +1,9 @@
+// Обучение: «Сейчас» (материал в работе, таймер, последние занятия) → Материалы → Области → Карточки → Статистика.
 import { db } from '../db.js';
 import {
   esc, icon, modal, field, formRow, toast, today, addDays, fmtDate, weekDays, lastNDays, parseISO,
-  fmtMinutes, progressBar, emptyState, barChart, ring, on, sum, sortBy, clamp, plural,
+  fmtMinutes, progressBar, barChart, ring, on, sum, sortBy, clamp, plural,
+  tabs, statLine, emptyAction, pageMenu,
 } from '../ui.js';
 
 export const title = 'Обучение';
@@ -30,8 +32,11 @@ const GRADES = [
   { key: 'easy', label: 'Легко', cls: 'good' },
 ];
 const LEARNED_INTERVAL = 21;
+const TABS = [['now', 'Сейчас'], ['items', 'Материалы'], ['areas', 'Области'], ['cards', 'Карточки'], ['stats', 'Статистика']];
+const STEP = 10; // «следующий шаг» = +10% прогресса материала
 
 // ---------- Локальное состояние (переживает перерисовку) ----------
+let tab = 'now';
 let selectedArea = null;   // id области-фильтра для материалов
 let itemFilter = 'all';    // all | active | planned | done
 let timerStart = null;     // ms, если таймер запущен
@@ -52,6 +57,7 @@ const colorBar = (value, max, color) => {
 const safeUrl = (u) => /^https?:\/\//i.test(u || '') ? u : '';
 const areaLabel = (a) => a ? `${a.icon || '📚'} ${a.name}` : 'Без области';
 const findEnglish = (areas) => areas.find(a => String(a.name).trim().toLowerCase() === 'английский') || null;
+const sessionWord = (n) => plural(n, 'занятие', 'занятия', 'занятий');
 
 // Упрощённый SM-2.
 function schedule(card, grade) {
@@ -78,6 +84,7 @@ function seedAreasIfEmpty() {
 export async function render(root, ctx = {}) {
   seedAreasIfEmpty();
   if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+  if (ctx.params?.tab && TABS.some(([id]) => id === ctx.params.tab)) tab = ctx.params.tab;
 
   const rerender = () => {
     const y = window.scrollY;
@@ -111,17 +118,8 @@ export async function render(root, ctx = {}) {
   if (!daySet.has(d)) d = addDays(d, -1);
   while (daySet.has(d)) { streak++; d = addDays(d, -1); }
 
-  // 14 дней
-  const byDay = {};
-  for (const s of sessions) byDay[s.date] = (byDay[s.date] || 0) + (Number(s.minutes) || 0);
-  const chartData = lastNDays(14, t).map(day => ({
-    label: String(parseISO(day).getDate()),
-    value: byDay[day] || 0,
-    color: day === t ? 'var(--c6)' : 'var(--accent)',
-  }));
-  const dailyTarget = weeklyTarget > 0 ? Math.round(weeklyTarget / 7) : null;
-
   // Материалы
+  const activeItems = sortBy(items.filter(i => i.status === 'active'), i => i.updatedAt || i.createdAt || '', true);
   let visibleItems = items;
   if (selectedArea) visibleItems = visibleItems.filter(i => i.areaId === selectedArea);
   if (itemFilter !== 'all') visibleItems = visibleItems.filter(i => i.status === itemFilter);
@@ -131,7 +129,7 @@ export async function render(root, ctx = {}) {
   for (const s of sessions) if (s.itemId) minutesByItem[s.itemId] = (minutesByItem[s.itemId] || 0) + (Number(s.minutes) || 0);
 
   // Последние занятия
-  const recent = [...sessions].sort((a, b) => String(b.date).localeCompare(String(a.date)) || String(b.createdAt || '').localeCompare(String(a.createdAt || ''))).slice(0, 10);
+  const recent = [...sessions].sort((a, b) => String(b.date).localeCompare(String(a.date)) || String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
 
   // Карточки
   const dueCards = cards.filter(c => (c.due || t) <= t);
@@ -139,50 +137,54 @@ export async function render(root, ctx = {}) {
   const cardsSorted = [...cards].sort((a, b) => String(a.due || '').localeCompare(String(b.due || '')));
   const CARDS_LIMIT = 30;
 
+  // ---------- Фрагменты ----------
   const areaCard = (a) => {
     const mins = minutesByArea[a.id] || 0;
     const target = Number(a.weeklyMinutesTarget) || 0;
     const activeCount = items.filter(i => i.areaId === a.id && i.status === 'active').length;
-    const selected = selectedArea === a.id;
-    return `<div class="card" data-action="select-area" data-id="${esc(a.id)}" style="cursor:pointer;${selected ? 'outline:2px solid var(--accent);' : ''}">
+    return `<div class="card ln-area" data-action="select-area" data-id="${esc(a.id)}" role="button" tabindex="0">
       <div class="row between top">
         <div class="row" style="min-width:0">
           <span style="font-size:24px;line-height:1">${esc(a.icon || '📚')}</span>
           <div style="min-width:0">
             <div class="bold ellipsis">${esc(a.name)}</div>
-            <div class="tiny muted">${activeCount} ${plural(activeCount, 'материал', 'материала', 'материалов')} в работе</div>
+            <div class="tiny muted">${activeCount ? `${activeCount} ${plural(activeCount, 'материал', 'материала', 'материалов')} в работе` : 'нет материалов в работе'}</div>
           </div>
         </div>
-        <button type="button" class="icon-btn sm" data-action="edit-area" data-id="${esc(a.id)}" aria-label="Изменить">${icon('edit')}</button>
+        <button type="button" class="icon-btn sm" data-action="edit-area" data-id="${esc(a.id)}" aria-label="Изменить область ${esc(a.name)}">${icon('edit')}</button>
       </div>
       <div class="row between tiny muted" style="margin:12px 0 5px">
-        <span class="bold" style="color:var(--fg)">${esc(fmtMinutes(mins))}</span>
+        <span class="bold" style="color:var(--fg)">${esc(fmtMinutes(mins))} за неделю</span>
         <span>${target ? `цель ${esc(fmtMinutes(target))}` : 'без цели'}</span>
       </div>
       ${colorBar(mins, target, a.color)}
     </div>`;
   };
 
-  const itemRow = (it) => {
+  const itemRow = (it, { step = false } = {}) => {
     const a = areaById[it.areaId];
     const p = clamp(Number(it.progress) || 0, 0, 100);
     const url = safeUrl(it.url);
     const mins = minutesByItem[it.id] || 0;
-    return `<div class="list-item">
+    return `<div class="list-item ln-item">
       <div class="main">
         <div class="row wrap" style="gap:6px">
           <span class="pill ${TYPE_CLS[it.type] || ''}">${esc(TYPES[it.type] || TYPES.other)}</span>
-          <span class="title ${it.status === 'done' ? 'strike' : ''}" data-action="edit-item" data-id="${esc(it.id)}" style="cursor:pointer">${esc(it.title)}</span>
-          ${url ? `<a href="${esc(url)}" target="_blank" rel="noopener" class="tiny" title="Открыть ссылку">↗</a>` : ''}
+          <button type="button" class="ln-title ${it.status === 'done' ? 'strike' : ''}" data-action="edit-item" data-id="${esc(it.id)}">${esc(it.title)}</button>
+          ${url ? `<a href="${esc(url)}" target="_blank" rel="noopener" class="tiny" aria-label="Открыть ссылку">↗</a>` : ''}
         </div>
-        <div class="sub">${esc(areaLabel(a))} · ${esc(STATUSES[it.status] || it.status)}${mins ? ` · ${esc(fmtMinutes(mins))}` : ''}${it.notes ? ` — ${esc(it.notes)}` : ''}</div>
+        <div class="sub">${esc(areaLabel(a))}${step ? '' : ` · ${esc(STATUSES[it.status] || it.status)}`}${mins ? ` · ${esc(fmtMinutes(mins))}` : ''}${it.notes ? ` — ${esc(it.notes)}` : ''}</div>
         <div class="row" style="margin-top:7px">
           <div class="grow">${progressBar(p, 100, it.status === 'done' ? 'good thin' : 'thin')}</div>
           <span class="tiny mono muted" style="width:38px;text-align:right">${p}%</span>
         </div>
       </div>
-      <button type="button" class="btn sm secondary" data-action="bump" data-id="${esc(it.id)}" ${p >= 100 ? 'disabled' : ''}>+10%</button>
-      <button type="button" class="icon-btn sm" data-action="edit-item" data-id="${esc(it.id)}" aria-label="Изменить">${icon('edit')}</button>
+      <div class="ln-item-actions">
+        ${step
+          ? `<button type="button" class="btn sm" data-action="step" data-id="${esc(it.id)}" ${p >= 100 ? 'disabled' : ''}>${icon('chevronRight')} Следующий шаг</button>
+             <button type="button" class="btn sm secondary" data-action="log-session" data-item="${esc(it.id)}">${icon('clock')} Занятие</button>`
+          : `<button type="button" class="btn sm secondary" data-action="step" data-id="${esc(it.id)}" ${p >= 100 ? 'disabled' : ''} aria-label="Следующий шаг: ${esc(it.title)}">+${STEP}%</button>`}
+      </div>
     </div>`;
   };
 
@@ -195,7 +197,7 @@ export async function render(root, ctx = {}) {
         <div class="title">${esc(fmtMinutes(s.minutes))} · ${esc(a ? a.name : 'Без области')}</div>
         <div class="sub">${esc(fmtDate(s.date))}${it ? ` · ${esc(it.title)}` : ''}${s.notes ? ` — ${esc(s.notes)}` : ''}</div>
       </div>
-      <button type="button" class="icon-btn sm" data-action="del-session" data-id="${esc(s.id)}" aria-label="Удалить">${icon('trash')}</button>
+      <button type="button" class="icon-btn sm" data-action="del-session" data-id="${esc(s.id)}" aria-label="Удалить занятие">${icon('trash')}</button>
     </div>`;
   };
 
@@ -213,88 +215,142 @@ export async function render(root, ctx = {}) {
     </div>`;
   };
 
-  const segBtn = (key, label) => `<button type="button" class="${itemFilter === key ? 'active' : ''}" data-action="filter" data-filter="${key}">${label}</button>`;
+  const timerCard = () => timerStart
+    ? `<div class="card ln-timer running" data-block="timer" data-block-title="Таймер">
+        <div class="row between wrap">
+          <div class="row"><span class="pill accent mono" id="timerElapsed">${fmtElapsed(Date.now() - timerStart)}</span><span class="small muted">занятие идёт</span></div>
+          <button type="button" class="btn danger" data-action="timer-stop">${icon('x')} Стоп и записать</button>
+        </div>
+      </div>`
+    : `<div class="card ln-timer" data-block="timer" data-block-title="Таймер">
+        <div class="row between wrap">
+          <div><div class="bold">Занятие</div><div class="tiny muted">Запустите таймер — минуты запишутся сами</div></div>
+          <button type="button" class="btn secondary" data-action="timer-start">${icon('play')} Старт таймера</button>
+        </div>
+      </div>`;
+
+  // ---------- Вкладки ----------
+  const line = statLine([
+    todayMinutes ? `сегодня <b>${esc(fmtMinutes(todayMinutes))}</b>` : '',
+    weekMinutes ? `неделя <b>${esc(fmtMinutes(weekMinutes))}</b>${weeklyTarget ? ` из ${esc(fmtMinutes(weeklyTarget))}` : ''}` : '',
+    streak ? `серия <b>${streak} ${plural(streak, 'день', 'дня', 'дней')}</b>` : '',
+    dueCards.length ? [`${dueCards.length} ${plural(dueCards.length, 'карточка', 'карточки', 'карточек')} к повторению`, 'warn'] : '',
+  ]);
+
+  let body = '';
+  if (tab === 'now') {
+    const nothing = !items.length && !sessions.length;
+    if (nothing) {
+      body = emptyAction({
+        text: 'Записывайте занятия и ведите материалы — здесь будет то, чем вы занимаетесь сейчас.',
+        action: 'log-session', label: 'Занятие',
+        second: { action: 'add-item', label: 'Добавить материал' },
+      });
+    } else {
+      body = `${timerCard()}
+      <div class="card" data-block="active" data-block-title="В работе">
+        <div class="section-title"><h2>В работе</h2>${activeItems.length ? `<span class="tiny muted">${activeItems.length} ${plural(activeItems.length, 'материал', 'материала', 'материалов')}</span>` : ''}</div>
+        ${activeItems.length
+          ? `<div class="list">${activeItems.map(it => itemRow(it, { step: true })).join('')}</div>`
+          : emptyAction({ text: 'Отметьте материал «в работе» — он появится здесь с кнопкой следующего шага.', action: 'add-item', label: 'Материал' })}
+      </div>
+      ${recent.length ? `<div class="card" data-block="recent" data-block-title="Последние занятия">
+        <div class="section-title"><h2>Последние занятия</h2><button type="button" class="link" data-tab="stats">вся статистика</button></div>
+        <div class="list">${recent.slice(0, 5).map(sessionRow).join('')}</div>
+      </div>` : ''}`;
+    }
+  } else if (tab === 'items') {
+    const segBtn = (key, label) => `<button type="button" class="chip ${itemFilter === key ? 'active' : ''}" data-action="filter" data-filter="${key}">${label}</button>`;
+    body = items.length
+      ? `<div class="chips ln-chips">${segBtn('all', 'Все')}${segBtn('active', 'В работе')}${segBtn('planned', 'Запланировано')}${segBtn('done', 'Готово')}</div>
+        ${areas.length > 1 ? `<div class="chips ln-chips">
+          <button type="button" class="chip ${!selectedArea ? 'active' : ''}" data-action="pick-area" data-id="">Все области</button>
+          ${areas.map(a => `<button type="button" class="chip ${selectedArea === a.id ? 'active' : ''}" data-action="pick-area" data-id="${esc(a.id)}">${esc(areaLabel(a))}</button>`).join('')}
+        </div>` : ''}
+        <div class="card">
+          ${visibleItems.length ? `<div class="list">${visibleItems.map(it => itemRow(it)).join('')}</div>` : `<div class="tiny muted">Ничего не найдено по текущему фильтру.</div>`}
+        </div>`
+      : emptyAction({ text: 'Курс, книга или статья: добавьте материал, чтобы видеть прогресс по нему.', action: 'add-item', label: 'Материал' });
+  } else if (tab === 'areas') {
+    body = areas.length
+      ? `<div class="grid-auto ln-areas">${areas.map(areaCard).join('')}</div>`
+      : emptyAction({ text: 'Области группируют материалы и занятия: например, «Психология» или «Английский».', action: 'add-area', label: 'Область' });
+  } else if (tab === 'cards') {
+    body = cards.length
+      ? `${statLine([`всего <b>${cards.length}</b>`, dueCards.length ? [`<b>${dueCards.length}</b> к повторению`, 'warn'] : '', learnedCount ? [`<b>${learnedCount}</b> выучено`, 'good'] : ''])}
+        <div class="card">
+          ${dueCards.length ? `<div class="row between wrap" style="margin-bottom:10px"><span class="small">${dueCards.length} ${plural(dueCards.length, 'карточка ждёт', 'карточки ждут', 'карточек ждут')} повторения</span><button type="button" class="btn sm" data-action="review">${icon('repeat')} Повторить</button></div>` : ''}
+          <div class="list">${cardsSorted.slice(0, CARDS_LIMIT).map(cardRow).join('')}</div>
+          ${cards.length > CARDS_LIMIT ? `<div class="tiny muted" style="margin-top:8px">…и ещё ${cards.length - CARDS_LIMIT}</div>` : ''}
+        </div>`
+      : emptyAction({ text: 'Слова и фразы для повторения по интервалам: добавьте первую карточку.', action: 'add-card', label: 'Карточка' });
+  } else if (tab === 'stats') {
+    if (!sessions.length) {
+      body = emptyAction({ text: 'Статистика появится после первого занятия.', action: 'log-session', label: 'Занятие' });
+    } else {
+      const byDay = {};
+      for (const s of sessions) byDay[s.date] = (byDay[s.date] || 0) + (Number(s.minutes) || 0);
+      const chartData = lastNDays(14, t).map(day => ({
+        label: String(parseISO(day).getDate()),
+        value: byDay[day] || 0,
+        color: day === t ? 'var(--c6)' : 'var(--accent)',
+      }));
+      const dailyTarget = weeklyTarget > 0 ? Math.round(weeklyTarget / 7) : null;
+      const areasWithMinutes = areas.filter(a => minutesByArea[a.id]);
+      body = `<div class="card">
+        <div class="row" style="gap:16px">
+          ${ring(weekPct, { size: 84, stroke: 9, label: `${Math.round(weekPct)}%`, color: weekPct >= 100 ? 'var(--good)' : 'var(--accent)' })}
+          <div class="grow">
+            <div class="label">Эта неделя</div>
+            <div class="value">${esc(fmtMinutes(weekMinutes))}</div>
+            <div class="tiny muted" style="margin-top:4px">${weeklyTarget ? `из ${esc(fmtMinutes(weeklyTarget))} · ` : ''}${weekSessions.length} ${sessionWord(weekSessions.length)}${streak ? ` · серия ${streak} ${plural(streak, 'день', 'дня', 'дней')}` : ''}</div>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="row between"><h3>Минуты за 14 дней</h3>${dailyTarget ? `<span class="tiny muted">пунктир — ${esc(fmtMinutes(dailyTarget))}/день</span>` : ''}</div>
+        ${barChart(chartData, { height: 130, target: dailyTarget, showValues: true })}
+      </div>
+      ${areasWithMinutes.length ? `<div class="card">
+        <h3>По областям за неделю</h3>
+        <div class="stack tight">${areasWithMinutes.map(a => `<div>
+          <div class="row between tiny" style="margin-bottom:4px"><span>${esc(areaLabel(a))}</span><span class="muted">${esc(fmtMinutes(minutesByArea[a.id]))}${Number(a.weeklyMinutesTarget) ? ` из ${esc(fmtMinutes(a.weeklyMinutesTarget))}` : ''}</span></div>
+          ${colorBar(minutesByArea[a.id], Number(a.weeklyMinutesTarget) || Math.max(...areasWithMinutes.map(x => minutesByArea[x.id])), a.color)}
+        </div>`).join('')}</div>
+      </div>` : ''}
+      <div class="card">
+        <div class="section-title"><h2>Все занятия</h2><span class="tiny muted">последние ${Math.min(recent.length, 30)}</span></div>
+        <div class="list">${recent.slice(0, 30).map(sessionRow).join('')}</div>
+      </div>`;
+    }
+  }
+
+  const MAIN = {
+    now: ['log-session', 'Занятие'], items: ['add-item', 'Материал'], areas: ['add-area', 'Область'],
+    cards: ['add-card', 'Карточка'], stats: ['log-session', 'Занятие'],
+  };
+  const [mainAction, mainLabel] = MAIN[tab] || MAIN.now;
 
   root.innerHTML = `<div class="learning-page">
     <div class="page-head">
-      <div><div class="eyebrow">Развитие</div><h1>Обучение</h1></div>
+      <div><div class="eyebrow">Знания</div><h1>Обучение</h1></div>
       <div class="actions">
-        ${timerStart
-          ? `<span class="pill accent mono" id="timerElapsed" style="font-size:14px;padding:7px 12px">${fmtElapsed(Date.now() - timerStart)}</span>
-             <button type="button" class="btn danger" data-action="timer-stop">${icon('x')} Стоп</button>`
-          : `<button type="button" class="btn secondary" data-action="timer-start">${icon('play')} Старт таймера</button>`}
-        <button type="button" class="btn" data-action="log-session">${icon('plus')} Записать занятие</button>
+        ${timerStart && tab !== 'now' ? `<button type="button" class="btn secondary" data-action="timer-stop"><span class="mono" id="timerElapsed">${fmtElapsed(Date.now() - timerStart)}</span> · Стоп</button>` : ''}
+        <button type="button" class="btn" data-action="${mainAction}">${icon('plus')} ${mainLabel}</button>
+        ${pageMenu([
+          timerStart ? null : { label: 'Старт таймера', action: 'timer-start', icon: 'play' },
+          tab !== 'now' ? { label: 'Записать занятие', action: 'log-session', icon: 'clock' } : null,
+          tab !== 'items' ? { label: 'Добавить материал', action: 'add-item', icon: 'book' } : null,
+          tab !== 'areas' ? { label: 'Добавить область', action: 'add-area', icon: 'layers' } : null,
+          tab !== 'cards' ? { label: 'Добавить карточку', action: 'add-card', icon: 'copy' } : null,
+          dueCards.length ? { label: `Повторить карточки (${dueCards.length})`, action: 'review', icon: 'repeat' } : null,
+          { label: 'Настроить страницу', action: 'customize', icon: 'sliders' },
+        ])}
       </div>
     </div>
-
-    <div class="grid-3" style="margin-bottom:12px">
-      <div class="card row" style="gap:14px">
-        ${ring(weekPct, { size: 84, stroke: 9, label: `${Math.round(weekPct)}%`, color: weekPct >= 100 ? 'var(--good)' : 'var(--accent)' })}
-        <div class="grow">
-          <div class="label">Эта неделя</div>
-          <div class="value">${esc(fmtMinutes(weekMinutes))}</div>
-          <div class="tiny muted" style="margin-top:4px">из ${esc(fmtMinutes(weeklyTarget))} · ${weekSessions.length} ${plural(weekSessions.length, 'занятие', 'занятия', 'занятий')}</div>
-        </div>
-      </div>
-      <div class="stat">
-        <div class="label">${icon('flame')} Серия</div>
-        <div class="value ${streak ? 'warn' : ''}">${streak}<small>${plural(streak, 'день', 'дня', 'дней')}</small></div>
-        <div class="sub">${daySet.has(t) ? 'Сегодня уже занимались' : streak ? 'Позанимайтесь сегодня, чтобы продолжить' : 'Начните серию сегодня'}</div>
-      </div>
-      <div class="stat">
-        <div class="label">${icon('clock')} Сегодня</div>
-        <div class="value">${esc(fmtMinutes(todayMinutes))}</div>
-        <div class="sub">${dailyTarget ? `ориентир ${esc(fmtMinutes(dailyTarget))} в день` : 'цель не задана'}</div>
-      </div>
-    </div>
-
-    <div class="card">
-      <div class="row between"><h3>Минуты за 14 дней</h3>${dailyTarget ? `<span class="tiny muted">пунктир — ${esc(fmtMinutes(dailyTarget))}/день</span>` : ''}</div>
-      ${barChart(chartData, { height: 130, target: dailyTarget, showValues: true })}
-    </div>
-
-    <div class="section-title">
-      <h2>Области</h2>
-      <div class="row">
-        ${selectedArea ? `<button type="button" class="link" data-action="clear-area">Сбросить фильтр</button>` : ''}
-        <button type="button" class="btn sm secondary" data-action="add-area">${icon('plus')} Область</button>
-      </div>
-    </div>
-    ${areas.length ? `<div class="grid-auto">${areas.map(areaCard).join('')}</div>` : `<div class="card">${emptyState('Добавьте области обучения — например, «Психология» или «Английский»', '🎓')}</div>`}
-
-    <div class="section-title">
-      <h2>Материалы${selectedArea ? ` <span class="muted" style="font-weight:500">· ${esc(areaLabel(areaById[selectedArea]))}</span>` : ''}</h2>
-      <div class="row wrap">
-        <div class="seg">${segBtn('all', 'Все')}${segBtn('active', 'В работе')}${segBtn('planned', 'Запланировано')}${segBtn('done', 'Готово')}</div>
-        <button type="button" class="btn sm secondary" data-action="add-item">${icon('plus')} Материал</button>
-      </div>
-    </div>
-    <div class="card">
-      ${visibleItems.length ? `<div class="list">${visibleItems.map(itemRow).join('')}</div>` : emptyState(items.length ? 'Ничего не найдено по текущему фильтру' : 'Добавьте курс, книгу или статью, которую хотите пройти', '📚')}
-    </div>
-
-    <div class="section-title"><h2>Последние занятия</h2><span class="tiny muted">последние 10</span></div>
-    <div class="card">
-      ${recent.length ? `<div class="list">${recent.map(sessionRow).join('')}</div>` : emptyState('Пока нет занятий — запустите таймер или запишите вручную', '⏱️')}
-    </div>
-
-    <div class="section-title">
-      <h2>Английский: карточки</h2>
-      <div class="row wrap">
-        <button type="button" class="btn sm secondary" data-action="add-card">${icon('plus')} Карточка</button>
-        <button type="button" class="btn sm" data-action="review" ${dueCards.length ? '' : 'disabled'}>${icon('repeat')} Повторить (${dueCards.length} к повторению)</button>
-      </div>
-    </div>
-    <div class="card">
-      <div class="row wrap" style="gap:24px;margin-bottom:${cards.length ? '12px' : '0'}">
-        <div><div class="label">Всего карточек</div><div class="value">${cards.length}</div></div>
-        <div><div class="label">К повторению</div><div class="value ${dueCards.length ? 'warn' : ''}">${dueCards.length}</div></div>
-        <div><div class="label">Выучено</div><div class="value good">${learnedCount}</div></div>
-      </div>
-      ${cards.length
-        ? `<div class="list">${cardsSorted.slice(0, CARDS_LIMIT).map(cardRow).join('')}</div>${cards.length > CARDS_LIMIT ? `<div class="tiny muted" style="margin-top:8px">…и ещё ${cards.length - CARDS_LIMIT}</div>` : ''}`
-        : emptyState('Добавьте слова и фразы — повторение по интервалам поможет их запомнить', '🗂️')}
-    </div>
+    ${tabs(TABS.map(([id, label]) => [id, label, id === 'items' && activeItems.length ? activeItems.length : id === 'cards' && dueCards.length ? dueCards.length : null]), tab, 'data-tab')}
+    ${line}
+    <div class="ln-body stack">${body}</div>
   </div>`;
 
   const page = root.firstElementChild;
@@ -303,7 +359,7 @@ export async function render(root, ctx = {}) {
   if (timerStart) {
     const span = root.querySelector('#timerElapsed');
     timerInterval = setInterval(() => {
-      if (!timerStart || !document.body.contains(span)) return;
+      if (!timerStart || !span || !document.body.contains(span)) return;
       span.textContent = fmtElapsed(Date.now() - timerStart);
     }, 1000);
   }
@@ -350,7 +406,7 @@ export async function render(root, ctx = {}) {
           field({ name: 'type', label: 'Тип', type: 'select', value: it?.type ?? 'course', options: Object.entries(TYPES) }),
         )}
         ${formRow(
-          field({ name: 'status', label: 'Статус', type: 'select', value: it?.status ?? 'planned', options: Object.entries(STATUSES) }),
+          field({ name: 'status', label: 'Статус', type: 'select', value: it?.status ?? (it ? 'planned' : 'active'), options: Object.entries(STATUSES) }),
           field({ name: 'progress', label: 'Прогресс, %', type: 'number', value: it?.progress ?? 0, min: 0, max: 100, step: 5 }),
         )}
         ${field({ name: 'url', label: 'Ссылка', type: 'url', value: it?.url ?? '', placeholder: 'https://…' })}
@@ -368,11 +424,12 @@ export async function render(root, ctx = {}) {
   function openLogModal({ minutes = 30, areaId = null, itemId = null, date = t } = {}) {
     const itemOptions = [['', 'Без материала'], ...sortBy(items.filter(i => i.status !== 'done' || i.id === itemId), i => `${STATUS_ORDER[i.status] ?? 9}${i.title}`)
       .map(i => [i.id, `${i.title}${areaById[i.areaId] ? ` · ${areaById[i.areaId].name}` : ''}`])];
+    const preArea = areaId ?? (itemId && itemById[itemId]?.areaId) ?? selectedArea ?? areas[0]?.id ?? '';
     modal({
       title: 'Записать занятие',
       body: `
         ${formRow(
-          field({ name: 'areaId', label: 'Область', type: 'select', value: areaId ?? selectedArea ?? areas[0]?.id ?? '', options: areaOptions(!areas.length) }),
+          field({ name: 'areaId', label: 'Область', type: 'select', value: preArea, options: areaOptions(!areas.length) }),
           field({ name: 'itemId', label: 'Материал', type: 'select', value: itemId ?? '', options: itemOptions }),
         )}
         ${formRow(
@@ -385,6 +442,8 @@ export async function render(root, ctx = {}) {
         let aId = d.areaId || null;
         if (!aId && d.itemId && itemById[d.itemId]) aId = itemById[d.itemId].areaId || null;
         db.add('studySessions', { areaId: aId, itemId: d.itemId || null, date: d.date || t, minutes: mins, notes: d.notes || '' });
+        const it = d.itemId ? itemById[d.itemId] : null;
+        if (it && it.status === 'planned') db.update('learningItems', it.id, { status: 'active' });
         toast(`Записано ${fmtMinutes(mins)}`);
       },
     });
@@ -421,7 +480,7 @@ export async function render(root, ctx = {}) {
 
     const draw = () => {
       if (idx >= queue.length) {
-        body.innerHTML = `<div class="empty"><div class="big">🎉</div>Готово! Повторено карточек: ${done}</div>`;
+        body.innerHTML = `<div class="empty"><div class="big">✓</div>Повторено карточек: ${done}</div>`;
         return;
       }
       const c = queue[idx];
@@ -471,11 +530,16 @@ export async function render(root, ctx = {}) {
   }
 
   // ---------- События ----------
+  on(page, 'click', '[data-tab]', (e, b) => { tab = b.dataset.tab; render(root, ctx); });
+  on(page, 'keydown', '.ln-area[role=button]', (e, el) => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); el.click(); }
+  });
   on(page, 'click', '[data-action]', (e, btn) => {
     const act = btn.dataset.action, id = btn.dataset.id;
     switch (act) {
       case 'timer-start':
         timerStart = Date.now();
+        tab = 'now';
         rerender();
         toast('Таймер запущен');
         break;
@@ -484,27 +548,29 @@ export async function render(root, ctx = {}) {
         timerStart = null;
         if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
         rerender();
-        openLogModal({ minutes: mins });
+        openLogModal({ minutes: mins, itemId: activeItems.length === 1 ? activeItems[0].id : null });
         break;
       }
-      case 'log-session': openLogModal(); break;
+      case 'log-session': openLogModal({ itemId: btn.dataset.item || null }); break;
       case 'add-area': openAreaModal(null); break;
-      case 'edit-area': openAreaModal(areaById[id]); break;
+      case 'edit-area': e.stopPropagation(); openAreaModal(areaById[id]); break;
       case 'select-area':
-        selectedArea = selectedArea === id ? null : id;
-        rerender();
+        if (e.target.closest('[data-action="edit-area"]')) break;
+        selectedArea = id; itemFilter = 'all'; tab = 'items';
+        render(root, ctx);
         break;
-      case 'clear-area': selectedArea = null; rerender(); break;
+      case 'pick-area': selectedArea = id || null; rerender(); break;
       case 'filter': itemFilter = btn.dataset.filter || 'all'; rerender(); break;
       case 'add-item': openItemModal(null); break;
       case 'edit-item': openItemModal(itemById[id]); break;
-      case 'bump': {
+      case 'step': {
         const it = itemById[id]; if (!it) break;
-        const p = clamp((Number(it.progress) || 0) + 10, 0, 100);
+        const p = clamp((Number(it.progress) || 0) + STEP, 0, 100);
         const patch = { progress: p };
         if (p >= 100) patch.status = 'done';
         else if (it.status === 'planned') patch.status = 'active';
         db.update('learningItems', id, patch);
+        toast(p >= 100 ? `«${it.title}» — готово` : `${it.title}: ${p}%`);
         break;
       }
       case 'del-session':

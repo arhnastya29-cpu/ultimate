@@ -1,11 +1,11 @@
 import { db } from '../db.js';
-import { esc, icon, field, formRow, formData, toast, on, today, addDays, lastNDays, fmtDate, fmtNum, avg, sum, sortBy, emptyState, barChart, lineChart, dateNav, weekdayShort, plural } from '../ui.js';
+import { esc, icon, field, formRow, formData, toast, on, today, addDays, lastNDays, fmtDate, fmtNum, avg, sum, sortBy, emptyAction, statLine, pageMenu, barChart, lineChart, dateNav, weekdayShort, plural } from '../ui.js';
+import { checkinOn, setCheckin, energyOn } from '../model.js';
 
 export const title = 'Сон и энергия';
 
 const QUALITY = ['😫', '😕', '😐', '🙂', '😴'];
 const ENERGY = ['🪫', '😴', '😐', '⚡', '🔥'];
-const tile = (label, value, sub = '') => `<div class="stat"><div class="label">${label}</div><div class="value">${value}</div>${sub ? `<div class="sub">${sub}</div>` : ''}</div>`;
 
 // Локальное состояние: выбранная дата (дата пробуждения).
 let day = today();
@@ -37,7 +37,7 @@ function insights(logs, target) {
   const out = [];
   const f1 = (v) => fmtNum(v, 1);
 
-  const withE = logs.filter(l => l.hours != null && l.energy);
+  const withE = logs.map(l => ({ ...l, energy: energyOn(l.date) })).filter(l => l.hours != null && l.energy);
   const long = withE.filter(l => Number(l.hours) >= target), short = withE.filter(l => Number(l.hours) < target);
   if (long.length >= 3 && short.length >= 3) {
     const a = avg(long, l => l.energy), b = avg(short, l => l.energy);
@@ -73,6 +73,8 @@ export async function render(root, ctx) {
   const logs = sortBy(db.all('sleepLogs'), l => l.date);
   const byDate = new Map(logs.map(l => [l.date, l]));
   const cur = byDate.get(day);
+  // Энергия дня — из чек-ина (единый источник); старое поле sleepLogs.energy читается только как запасное.
+  const curEnergy = energyOn(day);
 
   // --- статистика за 7 дней
   const week = lastNDays(7).map(d => byDate.get(d)).filter(Boolean);
@@ -91,84 +93,97 @@ export async function render(root, ctx) {
     return { label: weekdayShort(d), value: h, valueLabel: fmtNum(h, 1), color: h >= target ? 'var(--good)' : 'var(--warn)' };
   });
   const hasBars = bars.some(b => b.value > 0);
-  const mk = (k) => days14.map((d, i) => ({ x: i, y: byDate.get(d)?.[k] ?? null })).filter(p => p.y != null);
-  const energyPts = mk('energy'), qualityPts = mk('quality');
+  const energyPts = days14.map((d, i) => ({ x: i, y: energyOn(d) })).filter(p => p.y != null);
+  const qualityPts = days14.map((d, i) => ({ x: i, y: byDate.get(d)?.quality ?? null })).filter(p => p.y != null);
 
   const recent = [...logs].reverse().slice(0, 14);
-  const tips = insights(logs, target);
+  const tips = logs.length ? insights(logs, target) : [];
 
-  root.innerHTML = `<div>
+  const stats = statLine([
+    avgH != null ? `Сон <b class="${avgH >= target ? 'good' : 'warn'}">${fmtNum(avgH, 1)} ч</b> в среднем за 7 дней (цель ${fmtNum(target, 1)} ч)` : '',
+    avgQ != null ? `Качество <b>${fmtNum(avgQ, 1)}</b>/5` : '',
+    weekH.length && debt > 0 ? `Недосып <b class="${debt >= 5 ? 'bad' : 'warn'}">${fmtNum(debt, 1)} ч</b> за неделю` : '',
+    avgBed ? `Отбой в среднем <b>${avgBed}</b>` : '',
+  ]);
+
+  const historyRow = (l) => {
+    const h = Number(l.hours);
+    const en = energyOn(l.date);
+    const bits = [];
+    if (l.bedTime || l.wakeTime) bits.push(`${esc(l.bedTime || '—')} → ${esc(l.wakeTime || '—')}`);
+    if (l.quality) bits.push(`качество ${esc(l.quality)}/5`);
+    if (en) bits.push(`энергия ${esc(en)}/5`);
+    return `<div class="list-item">
+      <div class="main" data-pick="${esc(l.date)}" tabindex="0" role="button">
+        <div class="title">${esc(fmtDate(l.date, { weekday: true }))}</div>
+        <div class="sub">${bits.join(' · ') || '—'}${l.notes ? ` · <span class="faint">${esc(l.notes)}</span>` : ''}</div>
+      </div>
+      ${l.hours != null && !isNaN(h) ? `<span class="pill ${h >= target ? 'good' : 'warn'}">${fmtNum(h, 2)} ч</span>` : ''}
+      <button class="icon-btn sm" data-del="${esc(l.id)}" aria-label="Удалить">${icon('trash')}</button>
+    </div>`;
+  };
+
+  root.innerHTML = `<div class="body-page" data-page="sleep">
     <div class="page-head">
       <div><div class="eyebrow">Тело</div><h1>Сон и энергия</h1></div>
-      <div class="actions">${dateNav(day)}</div>
+      <div class="actions">
+        <div class="dnav">${dateNav(day)}</div>
+        ${pageMenu([{ label: 'Настроить страницу', action: 'customize', icon: 'sliders' }])}
+      </div>
     </div>
+    ${stats}
 
-    <div class="grid-4">
-      ${tile('Сон, среднее за 7 дней', avgH != null ? `<span class="${avgH >= target ? 'good' : 'warn'}">${fmtNum(avgH, 1)}</span><small>ч</small>` : '—', `цель ${fmtNum(target, 1)} ч${weekH.length ? ` · ${weekH.length} ${plural(weekH.length, 'ночь', 'ночи', 'ночей')}` : ''}`)}
-      ${tile('Качество сна', avgQ != null ? `${fmtNum(avgQ, 1)}<small>/5</small>` : '—', 'среднее за 7 дней')}
-      ${tile('Долг сна за неделю', weekH.length ? `<span class="${debt >= 5 ? 'bad' : debt > 0 ? 'warn' : 'good'}">${fmtNum(debt, 1)}</span><small>ч</small>` : '—', 'сумма недосыпа до цели')}
-      ${tile('Среднее время отбоя', avgBed ? `<span class="mono">${avgBed}</span>` : '—', 'за 7 дней')}
-    </div>
-
-    <div class="grid-2" style="margin-top:12px;align-items:start">
-      <form class="card form" id="sleepForm">
-        <div class="row between"><h3 style="margin:0">Сон · ${esc(fmtDate(day, { weekday: true }))}</h3>${cur ? '<span class="pill good">Записано</span>' : ''}</div>
-        <p class="tiny muted">Дата — день пробуждения. Часы считаются автоматически по времени отбоя и подъёма, но их можно поправить.</p>
-        ${formRow(
-          field({ name: 'bedTime', label: 'Лёг спать', type: 'time', value: cur?.bedTime || '' }),
-          field({ name: 'wakeTime', label: 'Проснулся', type: 'time', value: cur?.wakeTime || '' }),
-          field({ name: 'hours', label: 'Часов сна', type: 'number', step: 0.25, min: 0, max: 24, value: cur?.hours ?? '', placeholder: '7.5' }),
-        )}
-        <div class="row wrap top" style="gap:16px">
-          ${field({ name: 'quality', label: 'Качество сна', type: 'rating', value: cur?.quality, labels: QUALITY })}
-          ${field({ name: 'energy', label: 'Энергия днём', type: 'rating', value: cur?.energy, labels: ENERGY })}
-        </div>
-        ${field({ name: 'notes', label: 'Заметки', type: 'textarea', value: cur?.notes, rows: 2, placeholder: 'Что повлияло на сон?' })}
-        <button class="btn" type="submit">${icon('check')} Сохранить</button>
-      </form>
+    <div class="grid-2" style="align-items:start">
+      <div class="stack">
+        <form class="card form day-card" id="sleepForm" data-block="sleep-form" data-block-title="Запись сна">
+          <div class="row between"><h3 style="margin:0">Сон · ${esc(fmtDate(day, { weekday: true }))}</h3>${cur ? '<span class="pill good">Записано</span>' : ''}</div>
+          <p class="tiny muted" style="margin:0">Дата — день пробуждения. Часы считаются по времени отбоя и подъёма, их можно поправить.</p>
+          ${formRow(
+            field({ name: 'bedTime', label: 'Лёг спать', type: 'time', value: cur?.bedTime || '' }),
+            field({ name: 'wakeTime', label: 'Проснулся', type: 'time', value: cur?.wakeTime || '' }),
+            field({ name: 'hours', label: 'Часов сна', type: 'number', step: 0.25, min: 0, max: 24, value: cur?.hours ?? '', placeholder: '7.5' }),
+          )}
+          <div class="row wrap top" style="gap:16px">
+            ${field({ name: 'quality', label: 'Качество сна', type: 'rating', value: cur?.quality, labels: QUALITY })}
+            ${field({ name: 'energy', label: 'Энергия днём', type: 'rating', value: curEnergy, labels: ENERGY, hint: 'Та же оценка, что в чек-ине на странице «Здоровье»' })}
+          </div>
+          ${field({ name: 'notes', label: 'Заметки', type: 'textarea', value: cur?.notes, rows: 2, placeholder: 'Что повлияло на сон?' })}
+          <button class="btn" type="submit">${icon('check')} Сохранить</button>
+        </form>
+      </div>
 
       <div class="stack">
-        <div class="card">
-          <div class="row between"><h3 style="margin:0">Часы сна · 14 дней</h3><span class="tiny muted">пунктир — цель ${fmtNum(target, 1)} ч</span></div>
-          ${hasBars ? barChart(bars, { target, showValues: true, height: 130 }) : emptyState('Пока нет записей за две недели', '🌙')}
-        </div>
-        <div class="card">
-          <h3>Энергия и качество сна · 14 дней</h3>
-          ${(energyPts.length + qualityPts.length) > 0
-            ? lineChart([{ points: energyPts, color: 'var(--c2)' }, { points: qualityPts, color: 'var(--c1)' }], days14.map(weekdayShort), { min: 1, max: 5 })
-            : emptyState('Оцените сон и энергию, чтобы увидеть график', '📈')}
-          <div class="legend" style="margin-top:8px">
-            <span><i class="sw" style="background:var(--c2)"></i>Энергия</span>
-            <span><i class="sw" style="background:var(--c1)"></i>Качество сна</span>
-          </div>
+        <div class="card" data-block="history" data-block-title="История">
+          <div class="row between"><h3 style="margin:0">История</h3>${recent.length ? '<span class="tiny muted">последние 14</span>' : ''}</div>
+          ${recent.length ? `<div class="list">${recent.map(historyRow).join('')}</div>`
+            : emptyAction({ text: 'Записи сна покажут, сколько вы спите и как это связано с энергией днём', action: 'focus-form', label: 'Запись сна' })}
         </div>
       </div>
     </div>
 
-    <div class="grid-2" style="margin-top:12px;align-items:start">
-      <div class="card">
-        <h3>Наблюдения</h3>
-        <div class="stack tight small">${tips.map(t => `<div class="row top" style="gap:8px"><span class="accent">•</span><span>${esc(t)}</span></div>`).join('')}</div>
-      </div>
-      <div class="card">
-        <div class="row between"><h3 style="margin:0">История</h3><span class="tiny muted">последние 14</span></div>
-        ${recent.length ? `<div class="list">${recent.map(l => {
-          const h = Number(l.hours);
-          const bits = [];
-          if (l.bedTime || l.wakeTime) bits.push(`${esc(l.bedTime || '—')} → ${esc(l.wakeTime || '—')}`);
-          if (l.quality) bits.push(`качество ${esc(l.quality)}/5`);
-          if (l.energy) bits.push(`энергия ${esc(l.energy)}/5`);
-          return `<div class="list-item">
-            <div class="main" data-pick="${esc(l.date)}" style="cursor:pointer">
-              <div class="title">${esc(fmtDate(l.date, { weekday: true }))}</div>
-              <div class="sub">${bits.join(' · ') || '—'}${l.notes ? ` · <span class="faint">${esc(l.notes)}</span>` : ''}</div>
+    ${logs.length ? `<details class="acc card" data-block="analytics" data-block-title="Динамика и наблюдения" style="margin-top:14px">
+      <summary><span class="icon-btn sm chev">${icon('chevronDown')}</span> Динамика и наблюдения <span class="sum-sub">14 дней</span></summary>
+      <div class="acc-body">
+        <div class="acc-grid">
+          ${hasBars ? `<div class="card">
+            <div class="row between"><h3 style="margin:0">Часы сна · 14 дней</h3><span class="tiny muted">пунктир — цель ${fmtNum(target, 1)} ч</span></div>
+            ${barChart(bars, { target, showValues: true, height: 130 })}
+          </div>` : ''}
+          ${(energyPts.length + qualityPts.length) > 0 ? `<div class="card">
+            <h3>Энергия и качество сна · 14 дней</h3>
+            ${lineChart([{ points: energyPts, color: 'var(--c2)' }, { points: qualityPts, color: 'var(--c1)' }], days14.map(weekdayShort), { min: 1, max: 5 })}
+            <div class="legend" style="margin-top:8px">
+              <span><i class="sw" style="background:var(--c2)"></i>Энергия</span>
+              <span><i class="sw" style="background:var(--c1)"></i>Качество сна</span>
             </div>
-            ${l.hours != null && !isNaN(h) ? `<span class="pill ${h >= target ? 'good' : 'warn'}">${fmtNum(h, 2)} ч</span>` : ''}
-            <button class="icon-btn sm" data-del="${esc(l.id)}" aria-label="Удалить">${icon('trash')}</button>
-          </div>`;
-        }).join('')}</div>` : emptyState('Записей пока нет — заполните форму слева', '🌙')}
+          </div>` : ''}
+        </div>
+        <div class="card">
+          <h3>Наблюдения</h3>
+          <div class="stack tight small">${tips.map(t => `<div class="row top" style="gap:8px"><span class="accent">•</span><span>${esc(t)}</span></div>`).join('')}</div>
+        </div>
       </div>
-    </div>
+    </details>` : ''}
   </div>`;
 
   const view = root.firstElementChild;
@@ -182,6 +197,12 @@ export async function render(root, ctx) {
   });
   on(view, 'change', '[data-dn="pick"]', (e, t) => { if (t.value) { day = t.value; rerender(); } });
   on(view, 'click', '[data-pick]', (e, t) => { day = t.dataset.pick; rerender(); window.scrollTo({ top: 0, behavior: 'smooth' }); });
+  on(view, 'keydown', '[data-pick]', (e, t) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); t.click(); } });
+  on(view, 'click', '[data-action="focus-form"]', () => {
+    const f = view.querySelector('#sleepForm');
+    f.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    setTimeout(() => f.querySelector('[name="bedTime"]')?.focus(), 350);
+  });
 
   // --- оценки 1-5 внутри страницы
   on(view, 'click', '.rating button[data-v]', (e, b) => {
@@ -192,7 +213,7 @@ export async function render(root, ctx) {
     r.querySelectorAll('button').forEach(x => x.classList.toggle('active', x === b));
   });
 
-  // --- форма сна
+  // --- форма сна: часы и качество — в sleepLogs, энергия — в чек-ин (checkins)
   const form = view.querySelector('#sleepForm');
   const bedEl = form.querySelector('[name="bedTime"]'), wakeEl = form.querySelector('[name="wakeTime"]'), hoursEl = form.querySelector('[name="hours"]');
   const recompute = () => { const h = calcHours(bedEl.value, wakeEl.value); if (h != null) hoursEl.value = h; };
@@ -204,8 +225,14 @@ export async function render(root, ctx) {
     let hours = d.hours;
     if (hours == null) hours = calcHours(d.bedTime, d.wakeTime);
     if (hours == null && !d.quality && !d.energy) { toast('Укажите время сна или часы'); return; }
-    const rec = { date: day, bedTime: d.bedTime || '', wakeTime: d.wakeTime || '', hours, quality: d.quality, energy: d.energy, notes: d.notes };
-    db.upsert('sleepLogs', cur ? { id: cur.id, ...rec } : rec);
+    if (hours != null || d.quality || d.bedTime || d.wakeTime || d.notes || cur) {
+      const rec = { date: day, bedTime: d.bedTime || '', wakeTime: d.wakeTime || '', hours, quality: d.quality, notes: d.notes };
+      // Старое поле energy в sleepLogs очищаем: его единственный источник теперь чек-ин.
+      if (cur) db.update('sleepLogs', cur.id, { ...rec, energy: null });
+      else db.add('sleepLogs', rec);
+    }
+    if (d.energy) setCheckin(day, { energy: d.energy });
+    else if (checkinOn(day)?.energy) setCheckin(day, { energy: null });
     toast('Сон сохранён');
   });
 
