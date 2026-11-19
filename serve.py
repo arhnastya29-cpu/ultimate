@@ -33,8 +33,9 @@ class Handler(SimpleHTTPRequestHandler):
         pass
 
     def end_headers(self):
-        # Файлы приложения всегда свежие: кэшем управляет service worker, а не браузер.
-        self.send_header('Cache-Control', 'no-store')
+        # Файлы приложения браузер каждый раз перепроверяет (no-cache), но service worker может класть их в свой кэш
+        # (no-store ему это запрещает и ломает установку новой версии).
+        self.send_header('Cache-Control', 'no-cache')
         super().end_headers()
 
     def _cors(self):
