@@ -558,6 +558,11 @@ svg[aria-hidden="true"] { width: 1em; height: 1em; vertical-align: -0.15em; flex
   .cal-col-items { min-width: 60%; }
 }
 
+/* ---------- Чемпионские послания ---------- */
+.champ-line { font-family: var(--font-display); font-size: 14px; color: var(--accent); margin-top: 6px; letter-spacing: -0.005em; line-height: 1.4; max-width: 640px; }
+.page-head .champ-line { margin-top: 8px; }
+@media (max-width: 860px) { .champ-line { font-size: 13px; } }
+
 /* ---------- Toasts ---------- */
 #toasts { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 8px; z-index: 200; pointer-events: none; }
 .toast { background: var(--fg); color: var(--bg); padding: 10px 16px; border-radius: 999px; font-size: 13px; font-weight: 600; box-shadow: 0 16px 40px -10px rgba(0,0,0,0.4); animation: toast-in .4s var(--spring); display: flex; align-items: center; gap: 8px; }

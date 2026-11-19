@@ -3,6 +3,7 @@
 import { db } from '../db.js';
 import { composeBlocks, customizeButton, bindCustomize } from '../blocks.js';
 import { occursOn } from './calendar.js';
+import { greetingFor, dailyQuote, cheer, habitCheer } from '../motivation.js';
 import { esc, icon, today, addDays, fmtDate, fmtDateLong, fmtMinutes, fmtNum, fmtMoney, progressBar, checkBtn, on, toast, weekDays, lastNDays, sum, monthKey, plural, daysBetween, clamp } from '../ui.js';
 
 export const title = 'Сегодня';
@@ -254,7 +255,8 @@ export async function render(root, { navigate }) {
     <div class="page-head">
       <div>
         <div class="eyebrow">${esc(fmtDateLong(d))}</div>
-        <h1>${greeting()}${s.name ? ', ' + esc(s.name) : ''}</h1>
+        <h1>${greetingFor()}</h1>
+        <div class="champ-line">«${esc(dailyQuote())}»</div>
         <div class="small muted" style="margin-top:6px">${status}</div>
       </div>
       <div class="actions">
@@ -277,6 +279,7 @@ export async function render(root, { navigate }) {
   on(view, 'click', '[data-task]', (e, t) => {
     const task = db.get('tasks', t.dataset.task); if (!task) return;
     db.update('tasks', task.id, { done: !task.done, doneAt: task.done ? null : new Date().toISOString() });
+    if (!task.done && Math.random() < 0.6) toast(cheer(), 1800);
   });
   on(view, 'click', '[data-focus]', (e, t) => {
     const n = tasks.filter(x => x.focusDate === d && !x.done).length;
@@ -298,6 +301,7 @@ export async function render(root, { navigate }) {
     const target = h.target || 1; const cur = log?.count || 0;
     const nextV = cur >= target ? 0 : target > 1 ? cur + 1 : target;
     if (log) db.update('habitLogs', log.id, { count: nextV }); else db.add('habitLogs', { habitId: h.id, date: d, count: nextV });
+    if (nextV >= target && Math.random() < 0.5) toast(habitCheer(), 1800);
   });
   on(view, 'click', '[data-water]', (e, t) => {
     const add = Number(t.dataset.water);

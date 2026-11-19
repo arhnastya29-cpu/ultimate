@@ -1,6 +1,7 @@
 // Интерактивные эффекты: анимация чисел и прогресса, тултипы, командная палитра,
 // конфетти за закрытый день, переключатель темы.
 import { db } from './db.js';
+import { allDoneMessage } from './motivation.js';
 import { esc, icon, today, toast } from './ui.js';
 
 const reduced = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -114,8 +115,8 @@ export function watchCelebrations() {
   db.subscribe((col) => {
     if (col !== 'tasks' && col !== 'habitLogs' && col !== 'habits') return;
     const n = dayState();
-    if (n.tasksAll && !prevTasksDone) { confetti(); toast('Все задачи дня закрыты — отличная работа'); }
-    if (n.habitsAll && !prevHabitsDone) { confetti({ count: 100 }); toast('Все привычки на сегодня выполнены'); }
+    if (n.tasksAll && !prevTasksDone) { confetti(); toast(allDoneMessage('tasks'), 3200); }
+    if (n.habitsAll && !prevHabitsDone) { confetti({ count: 100 }); toast(allDoneMessage('habits'), 3200); }
     prevTasksDone = n.tasksAll; prevHabitsDone = n.habitsAll;
   });
 }

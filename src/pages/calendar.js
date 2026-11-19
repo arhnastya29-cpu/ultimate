@@ -4,6 +4,7 @@
 import { db } from '../db.js';
 import { esc, icon, modal, field, formRow, toast, on, today, addDays, fmtDate, daysBetween, checkBtn, emptyState, sortBy, plural, startOfWeek, weekDays, parseISO, iso } from '../ui.js';
 import { openTaskModal } from './task-modal.js';
+import { cheer } from '../motivation.js';
 
 export const title = 'Календарь';
 
@@ -187,7 +188,7 @@ export async function render(root, { navigate, params = {} } = {}) {
   on(v, 'click', '[data-day]', (e, b) => { if (e.target.closest('[data-ci],[data-add-day]')) return; cursor = b.dataset.day; view = 'day'; rerender(); });
   on(v, 'click', '[data-add-day]', (e, b) => { e.stopPropagation(); openEventModal(null, b.dataset.addDay); });
   on(v, 'click', '[data-add-task]', (e, b) => openTaskModal(null, { defaults: { date: b.dataset.addTask } }));
-  on(v, 'click', '[data-task-toggle]', (e, b) => { const x = db.get('tasks', b.dataset.taskToggle); if (x) db.update('tasks', x.id, x.done ? { done: false, doneAt: null } : { done: true, doneAt: today() }); });
+  on(v, 'click', '[data-task-toggle]', (e, b) => { const x = db.get('tasks', b.dataset.taskToggle); if (!x) return; db.update('tasks', x.id, x.done ? { done: false, doneAt: null } : { done: true, doneAt: today() }); if (!x.done && Math.random() < 0.6) toast(cheer(), 1800); });
   on(v, 'click', '[data-ci]', (e, b) => {
     e.stopPropagation();
     const type = b.dataset.ci, id = b.dataset.id;

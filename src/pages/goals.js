@@ -7,6 +7,7 @@ import {
 
 import { renderVision, bindVision } from './vision.js';
 import { openTaskModal } from './task-modal.js';
+import { cheer } from '../motivation.js';
 
 export const title = 'Цели и задачи';
 
@@ -49,6 +50,7 @@ function toggleTask(id) {
   if (!x) return;
   if (x.done) { db.update('tasks', id, { done: false, doneAt: null }); return; }
   db.update('tasks', id, { done: true, doneAt: day });
+  if (Math.random() < 0.6) toast(cheer(), 1800);
   if (x.recurring === 'daily' || x.recurring === 'weekly') {
     const step = x.recurring === 'daily' ? 1 : 7;
     const t = today();
