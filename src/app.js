@@ -264,6 +264,7 @@ db.subscribe((col) => {
 });
 
 window.addEventListener('hashchange', () => renderPage(false));
+window.addEventListener('ultimate:ai', () => { clearTimeout(rerenderTimer); rerenderTimer = setTimeout(() => renderPage(false), 30); });   // доступность помощника изменилась — обновить карточки
 window.addEventListener('resize', () => moveIndicator(current?.id));
 if (document.fonts?.ready) document.fonts.ready.then(() => moveIndicator(current?.id));
 

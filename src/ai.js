@@ -1,4 +1,4 @@
-// Помощник на Claude: контекст из данных приложения, запрос к API прямо из браузера,
+// Помощник: контекст из данных приложения, запрос к локальной модели (Ollama на Mac) или к Claude прямо из браузера,
 // потоковый ответ и действия (добавить задачу, отметить привычку, записать в Shadow и т.д.).
 //
 // Ключ API хранится только на этом устройстве (localStorage), в облако синхронизации не уходит.
@@ -20,11 +20,31 @@ export const MODELS = [
 ];
 
 // ---------- настройки ----------
+const DEFAULT_CFG = { provider: 'ollama', apiKey: '', model: 'claude-opus-5-5', workspaceId: '', ollamaUrl: 'http://127.0.0.1:11434', ollamaModel: 'qwen2.5:14b' };
 let cfg = load();
-function load() { try { return JSON.parse(localStorage.getItem(LS_KEY) || 'null') || { apiKey: '', model: 'claude-opus-5-5', workspaceId: '' }; } catch { return { apiKey: '', model: 'claude-opus-5-5', workspaceId: '' }; } }
+function load() { try { return { ...DEFAULT_CFG, ...(JSON.parse(localStorage.getItem(LS_KEY) || 'null') || {}) }; } catch { return { ...DEFAULT_CFG }; } }
 export function aiConfig() { return { ...cfg }; }
-export function setAiConfig(patch) { cfg = { ...cfg, ...patch }; try { localStorage.setItem(LS_KEY, JSON.stringify(cfg)); } catch {} window.dispatchEvent(new Event('ultimate:ai')); }
-export function aiReady() { return !!(cfg.apiKey && cfg.apiKey.trim()); }
+export function setAiConfig(patch) { cfg = { ...cfg, ...patch }; try { localStorage.setItem(LS_KEY, JSON.stringify(cfg)); } catch {} window.dispatchEvent(new Event('ultimate:ai')); if (patch.provider || patch.ollamaUrl) probeOllama(); }
+export const aiProvider = () => (cfg.provider === 'claude' ? 'claude' : 'ollama');
+export const ollamaUrl = () => String(cfg.ollamaUrl || DEFAULT_CFG.ollamaUrl).replace(/\/+$/, '');
+
+// Локальная модель доступна только там, где запущена Ollama (обычно на вашем Mac). Проверяем при старте
+// и после смены настроек; результат — в памяти, чтобы кнопка помощника не появлялась на телефоне.
+let ollamaOk = false, ollamaModels = [];
+export async function probeOllama() {
+  try {
+    const ctl = new AbortController(); const tm = setTimeout(() => ctl.abort(), 2500);
+    const r = await fetch(ollamaUrl() + '/api/tags', { signal: ctl.signal }); clearTimeout(tm);
+    const j = r.ok ? await r.json() : { models: [] };
+    ollamaModels = (j.models || []).map(m => m.name);
+    ollamaOk = r.ok;
+  } catch { ollamaOk = false; ollamaModels = []; }
+  window.dispatchEvent(new Event('ultimate:ai'));
+  return { ok: ollamaOk, models: ollamaModels };
+}
+export const ollamaStatus = () => ({ ok: ollamaOk, models: ollamaModels, hasModel: ollamaModels.some(n => n === cfg.ollamaModel || n.split(':')[0] === String(cfg.ollamaModel || '').split(':')[0]) });
+export function aiReady() { return aiProvider() === 'ollama' ? ollamaOk : !!(cfg.apiKey && cfg.apiKey.trim()); }
+export function aiLabel() { return aiProvider() === 'ollama' ? `локально · ${cfg.ollamaModel}` : (cfg.model || '').replace('claude-', '').replace(/-/g, ' '); }
 
 // ---------- история чата (только текст, для показа и продолжения разговора) ----------
 let history = (() => { try { return JSON.parse(localStorage.getItem(LS_CHAT) || '[]'); } catch { return []; } })();
@@ -343,15 +363,72 @@ async function request(messages, pageId, { onText, signal, withFallback = true }
   return { content: content.filter(b => b && !b._skip), stopReason };
 }
 
+
+// ---------- запрос к локальной модели (Ollama) ----------
+// Тот же контракт, что у request(): принимает сообщения в формате Anthropic и возвращает { content, stopReason }.
+function toOllamaMessages(messages) {
+  const out = [];
+  for (const m of messages) {
+    if (typeof m.content === 'string') { out.push({ role: m.role, content: m.content }); continue; }
+    if (m.role === 'assistant') {
+      const text = m.content.filter(b => b.type === 'text').map(b => b.text).join('');
+      const calls = m.content.filter(b => b.type === 'tool_use').map(b => ({ function: { name: b.name, arguments: b.input || {} } }));
+      out.push({ role: 'assistant', content: text, ...(calls.length ? { tool_calls: calls } : {}) });
+    } else {
+      for (const b of m.content) if (b.type === 'tool_result') out.push({ role: 'tool', content: String(b.content || '') });
+    }
+  }
+  return out;
+}
+async function requestOllama(messages, pageId, { onText, signal }) {
+  const body = {
+    model: cfg.ollamaModel || DEFAULT_CFG.ollamaModel,
+    stream: true,
+    options: { temperature: 0.4, num_ctx: 8192 },
+    messages: [{ role: 'system', content: systemPrompt(pageId) + '\n\nВажно: если пользователь просит что-то добавить, записать, отметить или создать — обязательно вызови подходящий инструмент (add_task, add_event, add_shadow_note и т.д.), а не описывай действие словами. После выполнения коротко подтверди.' + '\n\n# Данные пользователя\n' + buildContext(pageId) }, ...toOllamaMessages(messages)],
+    tools: TOOLS.map(t => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.input_schema } })),
+  };
+  let r;
+  try { r = await fetch(ollamaUrl() + '/api/chat', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal }); }
+  catch (e) { if (e.name === 'AbortError') throw e; ollamaOk = false; throw new Error('Локальная модель недоступна. Она работает на Mac, где установлена Ollama; на телефоне можно переключиться на Claude в Настройках.'); }
+  if (!r.ok) {
+    let msg = `Ошибка ${r.status}`; try { const j = await r.json(); msg = j?.error || msg; } catch {}
+    if (/not found/i.test(String(msg))) throw new Error(`Модель «${cfg.ollamaModel}» не скачана. Запустите в Терминале: ollama pull ${cfg.ollamaModel}`);
+    throw new Error(String(msg));
+  }
+  let text = ''; const calls = []; let buf = '';
+  const reader = r.body.getReader(); const dec = new TextDecoder();
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    let idx;
+    while ((idx = buf.indexOf('\n')) >= 0) {
+      const line = buf.slice(0, idx).trim(); buf = buf.slice(idx + 1);
+      if (!line) continue;
+      let ev; try { ev = JSON.parse(line); } catch { continue; }
+      if (ev.error) throw new Error(ev.error);
+      const m = ev.message || {};
+      if (m.content) { text += m.content; onText?.(m.content); }
+      for (const c of m.tool_calls || []) calls.push({ type: 'tool_use', id: 'call_' + calls.length, name: c.function?.name, input: c.function?.arguments || {} });
+    }
+  }
+  const content = [];
+  if (text) content.push({ type: 'text', text });
+  content.push(...calls);
+  return { content, stopReason: calls.length ? 'tool_use' : 'end_turn' };
+}
+
 // Полный цикл: текст → (действия → результаты → снова запрос)* → ответ.
 export async function ask(userText, { pageId = 'today', onText, onAction, signal } = {}) {
-  if (!aiReady()) throw new Error('Сначала вставьте ключ Claude в Настройках.');
+  if (aiProvider() === 'claude' && !aiReady()) throw new Error('Сначала вставьте ключ Claude в Настройках.');
   const msgs = [...history.filter(m => m.role === 'user' || m.role === 'assistant').slice(-12).map(m => ({ role: m.role, content: m.text })), { role: 'user', content: userText }];
   history.push({ role: 'user', text: userText, at: Date.now() });
   let full = '';
   const actions = [];
   for (let round = 0; round < 6; round++) {
-    const { content, stopReason } = await request(msgs, pageId, { onText: (tx) => { full += tx; onText?.(tx); }, signal });
+    const send = aiProvider() === 'ollama' ? requestOllama : request;
+    const { content, stopReason } = await send(msgs, pageId, { onText: (tx) => { full += tx; onText?.(tx); }, signal });
     if (stopReason === 'refusal') { full += '\n\n(Запрос отклонён системой безопасности модели.)'; onText?.('\n\n(Запрос отклонён системой безопасности модели.)'); break; }
     const toolUses = content.filter(b => b.type === 'tool_use');
     if (stopReason !== 'tool_use' || !toolUses.length) break;
@@ -370,6 +447,14 @@ export async function ask(userText, { pageId = 'today', onText, onAction, signal
   return { text: full.trim(), actions };
 }
 
+// Короткий ответ без истории и без действий — для «Совета дня» и подобных карточек.
+export async function askOnce(prompt, { pageId = 'today', signal } = {}) {
+  if (!aiReady()) throw new Error(aiProvider() === 'ollama' ? 'Локальная модель недоступна' : 'Ключ Claude не задан');
+  const send = aiProvider() === 'ollama' ? requestOllama : request;
+  const { content } = await send([{ role: 'user', content: prompt }], pageId, { signal });
+  return content.filter(b => b.type === 'text').map(b => b.text).join('').trim();
+}
+
 export async function testKey() {
   const r = await fetch(API_URL, {
     method: 'POST',
@@ -382,6 +467,8 @@ export async function testKey() {
 }
 
 // Подсказки по разделам для панели
+probeOllama();
+
 export function quickPrompts(pageId) {
   const map = {
     today: ['Собери план на сегодня', 'Что сейчас важнее всего?', 'Что я упускаю на этой неделе?'],

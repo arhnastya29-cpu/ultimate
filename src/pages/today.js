@@ -6,6 +6,7 @@ import { db } from '../db.js';
 import { composeBlocks, bindCustomize } from '../blocks.js';
 import { greetingFor, dailyQuote, quoteHtml, cheer, habitCheer } from '../motivation.js';
 import { openCapture } from '../capture.js';
+import { aiReady, askOnce, aiProvider } from '../ai.js';
 import { esc, icon, today, addDays, fmtDate, fmtDateLong, fmtMinutes, fmtNum, fmtMoney, progressBar, checkBtn, on, toast, weekDays, lastNDays, sum, monthKey, plural, daysBetween, clamp, pageMenu, statLine } from '../ui.js';
 import { agendaOn, nextEvent, upcomingDeadlines, overdueItems, isMine, toggleTask, addTask, habitStatus, habitScheduled, setHabitCount, checkinOn, sleepOn, setCheckin, setSleepHours, addWater, projectProgress, goalProgress, moduleOn, ceoPerson, personName, nowHM } from '../model.js';
 
@@ -14,6 +15,10 @@ export const title = 'Сегодня';
 let showRest = false;    // раскрыт ли список остальных задач дня
 let habitsEdit = false;  // режим правки привычек (крестики)
 let checkinOpen = false; // раскрыт ли полный чек-ин
+let adviceBusy = false;  // идёт запрос совета дня
+const ADVICE_KEY = 'ultimate_advice';
+function loadAdvice(d) { try { const a = JSON.parse(localStorage.getItem(ADVICE_KEY) || 'null'); return a && a.date === d ? a : null; } catch { return null; } }
+function saveAdvice(d, text) { try { localStorage.setItem(ADVICE_KEY, JSON.stringify({ date: d, text, at: Date.now() })); } catch {} }
 
 const dayWord = (n) => plural(n, 'день', 'дня', 'дней');
 const minWord = (n) => plural(n, 'минуту', 'минуты', 'минут');
@@ -171,6 +176,10 @@ export async function render(root, { navigate }) {
           </div>
           <input class="input" data-checkin-note placeholder="Заметка о самочувствии (необязательно)" value="${esc(checkin?.notes || '')}" style="margin-top:10px" aria-label="Заметка о самочувствии">` : ''}
         </div>` },
+    { id: 'advice', title: 'Совет помощника', col: 2, html: aiReady() ? (() => { const a = loadAdvice(d); return `<div class="card advice-card">
+          <div class="section-title"><h2>${icon('zap')} Совет на сегодня</h2><span class="row tiny muted" style="gap:8px">${aiProvider() === 'ollama' ? 'локальная модель' : 'Claude'}${a ? `<button type="button" class="link" data-advice-refresh>обновить</button>` : ''}</span></div>
+          ${a ? `<div class="small advice-text">${esc(a.text)}</div>` : adviceBusy ? '<div class="small muted">Думаю над вашими данными…</div>' : `<div class="empty-row"><span>Помощник посмотрит задачи, события и самочувствие и предложит, с чего начать.</span><button type="button" class="btn sm" data-advice-refresh>${icon('zap')} Получить совет</button></div>`}
+        </div>`; })() : '' },
     { id: 'attention', title: 'Требует внимания', col: 2, html: (deadlines.length || overdue.total) ? `<div class="card">
           <div class="section-title"><h2>${icon('clock')} Требует внимания</h2>${overdue.total ? `<span class="pill bad">просрочено ${overdue.total}</span>` : ''}</div>
           ${overdue.tasks.length ? `<div class="tiny bad" style="margin-bottom:8px">${icon('clock')} Просрочено задач: ${overdue.tasks.length} · <button type="button" class="link" data-go="plan" data-params='{"tab":"all"}'>разобрать</button></div>` : ''}
@@ -262,6 +271,15 @@ export async function render(root, { navigate }) {
 
   // ---------- события ----------
   on(view, 'click', '[data-action="go-journal"]', () => navigate('journal'));
+  on(view, 'click', '[data-advice-refresh]', async () => {
+    if (adviceBusy) return;
+    adviceBusy = true; render(root, { navigate });
+    try {
+      const text = await askOnce('Дай один короткий совет на сегодня (3–5 строк, без заголовков и списков): с чего начать день и что не упустить, с опорой на мои задачи, события, просрочку и самочувствие.', { pageId: 'today' });
+      saveAdvice(d, text || 'Сегодня всё под контролем: начните с фокуса дня.');
+    } catch (e) { toast('Совет не получен: ' + (e.message || e)); }
+    finally { adviceBusy = false; render(root, { navigate }); }
+  });
   on(view, 'click', '[data-action="go-plan"]', () => navigate('plan'));
   on(view, 'click', '[data-capture-type]', (e, t) => { e.stopPropagation(); openCapture({ pageId: 'today', type: t.dataset.captureType }); });
   on(view, 'click', '[data-go]', (e, t) => {

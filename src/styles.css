@@ -818,3 +818,4 @@ details.acc > summary::-webkit-details-marker { display: none; }
 @media (max-width: 860px) { .page-head .btn[data-capture] { display: none; } }
 .page-head .stat-line { margin: 8px 0 0; }
 @media (max-width: 480px) { .tabs { flex-wrap: wrap; } .tabs .tab { padding: 9px 9px; min-height: 40px; font-size: 13px; } }
+.advice-text { white-space: pre-wrap; line-height: 1.55; }

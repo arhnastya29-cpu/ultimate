@@ -1,7 +1,7 @@
 // Панель «Помощник»: плавающая кнопка, выезжающая панель с чатом, быстрые вопросы по разделу,
 // голосовой ввод. Ответы приходят потоком; действия помощника показываются отдельной строкой.
 import { esc, icon, el, toast } from './ui.js';
-import { ask, aiReady, chatHistory, clearChat, quickPrompts, aiConfig } from './ai.js';
+import { ask, aiReady, chatHistory, clearChat, quickPrompts, aiConfig, aiProvider, aiLabel } from './ai.js';
 import { db } from './db.js';
 
 let panel = null;
@@ -73,8 +73,10 @@ function renderPrompts() {
   const ready = aiReady();
   box.innerHTML = ready
     ? quickPrompts(currentPage).map(q => `<button type="button" class="chip" data-ai-q="${esc(q)}">${esc(q)}</button>`).join('')
-    : `<div class="ai-setup">Чтобы помощник заработал, вставьте ключ Claude в <a href="#/settings" data-ai-close>Настройках</a>. Он хранится только на этом устройстве.</div>`;
-  panel.querySelector('.ai-model').textContent = (aiConfig().model || '').replace('claude-', '').replace(/-/g, ' ');
+    : (aiProvider() === 'ollama'
+      ? `<div class="ai-setup">Локальная модель сейчас недоступна: она работает на Mac, где установлена Ollama. Проверьте, что Ollama запущена, или переключитесь на Claude в <a href="#/settings" data-ai-close>Настройках</a>.</div>`
+      : `<div class="ai-setup">Чтобы помощник заработал, вставьте ключ Claude в <a href="#/settings" data-ai-close>Настройках</a>. Он хранится только на этом устройстве.</div>`);
+  panel.querySelector('.ai-model').textContent = aiLabel();
   panel.querySelector('.ai-form').style.display = ready ? '' : 'none';
 }
 
@@ -92,7 +94,7 @@ function bubble(m) {
 
 async function send(text) {
   if (busy) { abort?.abort(); busy = false; }
-  if (!aiReady()) { toast('Сначала вставьте ключ Claude в Настройках'); return; }
+  if (!aiReady()) { toast(aiProvider() === 'ollama' ? 'Локальная модель недоступна на этом устройстве' : 'Сначала вставьте ключ Claude в Настройках'); return; }
   const box = panel.querySelector('.ai-messages');
   if (!chatHistory().length) box.innerHTML = '';
   box.insertAdjacentHTML('beforeend', bubble({ role: 'user', text }));
