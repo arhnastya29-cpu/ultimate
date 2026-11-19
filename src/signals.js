@@ -27,23 +27,30 @@ const SUMMARY_LEN = 500;
 
 // ---------- мост к сети ----------
 let localOk = null;      // null — ещё не проверяли
+let localBase = '';      // '' — мост на том же адресе (приложение открыто через start.command); иначе адрес сервера на Mac
 let lastGood = null;     // шаблон публичного прокси, который сработал последним
+const MAC_SERVER = 'http://127.0.0.1:8765';
 export const proxyMode = () => db.settings().signalsProxy || 'auto';
-export function bridgeStatus() { return { local: localOk, lastGood }; }
+export function bridgeStatus() { return { local: localOk, lastGood, base: localBase }; }
 
+async function ping(base) {
+  const ctl = new AbortController(); const tm = setTimeout(() => ctl.abort(), 1500);
+  try { const r = await fetch(base + '/__ping', { signal: ctl.signal, cache: 'no-store' }); const j = r.ok ? await r.json() : null; return !!(j && j.app === 'ultimate'); }
+  catch { return false; } finally { clearTimeout(tm); }
+}
+// Сначала мост на том же адресе; если приложение открыто с сайта — пробуем сервер ULTIMATE на этом Mac
+// (браузер может это запретить, тогда остаются публичные прокси).
 export async function probeLocal() {
-  try {
-    const ctl = new AbortController(); const tm = setTimeout(() => ctl.abort(), 1500);
-    const r = await fetch('/__ping', { signal: ctl.signal, cache: 'no-store' }); clearTimeout(tm);
-    const j = r.ok ? await r.json() : null;
-    localOk = !!(j && j.app === 'ultimate');
-  } catch { localOk = false; }
+  if (await ping('')) { localOk = true; localBase = ''; }
+  else if (!/^(127\.0\.0\.1|localhost)$/.test(location.hostname) && await ping(MAC_SERVER)) { localOk = true; localBase = MAC_SERVER; }
+  else { localOk = false; localBase = ''; }
   return localOk;
 }
 
 const LOCAL = '/__fetch/{key}?url={url}';   // {key} делает адрес уникальным, чтобы браузер не отдал старый ответ из кэша
 async function fetchVia(template, url, signal) {
-  const target = template === 'direct' ? url : template.replace('{key}', Date.now().toString(36)).replace('{url}', encodeURIComponent(url));
+  const tpl = template === LOCAL ? localBase + LOCAL : template;
+  const target = template === 'direct' ? url : tpl.replace('{key}', Date.now().toString(36)).replace('{url}', encodeURIComponent(url));
   const ctl = new AbortController(); const tm = setTimeout(() => ctl.abort(), 25000);
   signal?.addEventListener('abort', () => ctl.abort());
   try {
@@ -86,7 +93,8 @@ export async function fetchText(url, { signal, quick = false } = {}) {
       errors.push(`${t === 'direct' ? 'напрямую' : t === LOCAL ? 'локально' : new URL(t.replace('{url}', 'x')).host}: ${e.message || e}`);
     }
   }
-  throw new Error('Не удалось загрузить. ' + errors.slice(0, 3).join('; '));
+  const hint = localOk ? '' : 'Мост на Mac не найден — откройте ULTIMATE через start.command, там ленты загружаются надёжно. ';
+  throw new Error(hint + 'Не удалось загрузить: ' + errors.slice(0, 3).join('; '));
 }
 
 // ---------- разбор ----------

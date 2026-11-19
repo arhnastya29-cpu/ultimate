@@ -4,7 +4,7 @@
    Шрифты Google кэшируются по мере загрузки. Данные приложения живут в IndexedDB,
    service worker их не трогает.
    При любом изменении файлов в src/ поднимайте VERSION — старый кэш удалится. */
-const VERSION = 'lifeos-v23';
+const VERSION = 'lifeos-v24';
 const APP_SHELL = [
   "./",
   "index.html",
@@ -93,6 +93,8 @@ self.addEventListener('fetch', (event) => {
     return;
   }
   if (url.origin !== self.location.origin) return;
+  // Мост к лентам и проверка локального сервера (serve.py) — всегда напрямую в сеть, без кэша.
+  if (url.pathname.startsWith('/__')) return;
 
   // Навигация: отдаём index.html из кэша, иначе сеть.
   if (req.mode === 'navigate') {
@@ -108,7 +110,8 @@ async function staleWhileRevalidate(req, cacheName) {
   const cache = await caches.open(cacheName);
   const cached = await cache.match(req, { ignoreSearch: true });
   const network = fetch(req).then((res) => {
-    if (res && (res.ok || res.type === 'opaque')) cache.put(req, res.clone());
+    // Ответ с Cache-Control: no-store в кэш не кладётся — это не ошибка, отдаём его как есть.
+    if (res && (res.ok || res.type === 'opaque')) cache.put(req, res.clone()).catch(() => {});
     return res;
   }).catch(() => undefined);
   return cached || (await network) || Response.error();

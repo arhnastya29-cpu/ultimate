@@ -37,9 +37,15 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_header('Cache-Control', 'no-store')
         super().end_headers()
 
+    def _cors(self):
+        # Мостом может пользоваться и сайт ULTIMATE (https://…github.io), не только приложение с 127.0.0.1
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Expose-Headers', 'X-Final-Url')
+
     def _json(self, code, obj):
         body = json.dumps(obj, ensure_ascii=False).encode('utf-8')
         self.send_response(code)
+        self._cors()
         self.send_header('Content-Type', 'application/json; charset=utf-8')
         self.send_header('Content-Length', str(len(body)))
         self.end_headers()
@@ -80,6 +86,7 @@ class Handler(SimpleHTTPRequestHandler):
         if len(raw) > MAX_BYTES:
             raw = raw[:MAX_BYTES]
         self.send_response(200)
+        self._cors()
         self.send_header('Content-Type', ctype)
         self.send_header('Content-Length', str(len(raw)))
         self.send_header('X-Final-Url', final)
