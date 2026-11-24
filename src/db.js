@@ -63,6 +63,8 @@ export const DEFAULT_SETTINGS = {
   signalsFocus: '',         // что важно в сводке: «продукт, AI, рынок…»
   signalsKeepDays: 14,      // сколько дней хранить непрочитанные записи
   signalsHours: 24,         // за какой период собирать сводку
+  signalsTopics: null,      // свои темы для разметки (null — список по умолчанию из signals.js)
+  signalsAutoTag: true,     // размечать новые записи моделью после обновления ленты
 };
 
 const DB_NAME = 'lifeos';

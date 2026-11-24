@@ -7,13 +7,16 @@ import { aiReady, aiProvider, askPlain, aiLabel } from '../ai.js';
 import {
   KINDS, sources, activeSources, items, unreadCount, resolveSource, addSource, removeSource, refreshAll, refreshSource, isRefreshing,
   lastRefreshAt, staleFor, digestInput, digestPrompt, digests, todayDigest, saveDigest, probeLocal, bridgeStatus, proxyMode, prune,
+  topics, DEFAULT_TOPICS, untagged, dupsOf, isPrimary,
 } from '../signals.js';
+import { tagNew, isTagging, tagProgress } from '../signals-ai.js';
 
 export const title = 'Сигналы';
 
 let tab = 'feed';          // feed | digest | sources
 let filter = 'unread';     // unread | all | saved
 let srcFilter = '';        // id источника или ''
+let topicFilter = '';      // тема или ''
 let digestBusy = false;    // идёт сборка сводки
 let digestDraft = '';      // текст сводки по мере генерации
 let digestError = '';
@@ -53,11 +56,16 @@ function feedView() {
   if (!srcs.length) return emptyAction({ text: 'Добавьте сайты, RSS-ленты или Telegram-каналы — здесь будут собираться их новости, а помощник сделает по ним короткую сводку.', action: 'sg-tab-sources', label: 'Добавить источник' });
   const all = items();
   if (!all.length) return emptyAction({ text: isRefreshing() ? 'Загружаю ленты…' : 'Записей пока нет. Нажмите «Обновить», чтобы загрузить ленты.', action: isRefreshing() ? '' : 'sg-refresh', label: 'Обновить' });
-  let list = filter === 'unread' ? all.filter(i => !i.read) : filter === 'saved' ? all.filter(i => i.saved) : all;
+  const primary = all.filter(isPrimary);
+  let list = filter === 'unread' ? primary.filter(i => !i.read) : filter === 'saved' ? all.filter(i => i.saved) : primary;
   if (srcFilter) list = list.filter(i => i.sourceId === srcFilter);
+  if (topicFilter) list = list.filter(i => i.topic === topicFilter);
   list = sortBy(list, i => String(i.date || i.fetchedAt), true);
-  const unread = all.filter(i => !i.read).length, saved = all.filter(i => i.saved).length;
-  const perSrc = {}; for (const i of all) if (!i.read) perSrc[i.sourceId] = (perSrc[i.sourceId] || 0) + 1;
+  const unread = primary.filter(i => !i.read).length, saved = all.filter(i => i.saved).length;
+  const perSrc = {}; for (const i of primary) if (!i.read) perSrc[i.sourceId] = (perSrc[i.sourceId] || 0) + 1;
+  const perTopic = {}; for (const i of primary) if (i.topic && (filter !== 'unread' || !i.read)) perTopic[i.topic] = (perTopic[i.topic] || 0) + 1;
+  const topicChips = topics().filter(t => perTopic[t]).map(t => `<button class="chip ${topicFilter === t ? 'active' : ''}" data-sg-topic="${esc(t)}">${esc(t)} <span class="faint">${perTopic[t]}</span></button>`);
+  const left = untagged().length, tp = tagProgress();
   const chips = [
     `<button class="chip ${filter === 'unread' ? 'active' : ''}" data-sg-filter="unread">Непрочитанные${unread ? ` <span class="faint">${unread}</span>` : ''}</button>`,
     `<button class="chip ${filter === 'all' ? 'active' : ''}" data-sg-filter="all">Все <span class="faint">${all.length}</span></button>`,
@@ -67,26 +75,36 @@ function feedView() {
   // Группируем по дню
   const groups = [];
   for (const i of list) { const d = dayOf(i.date || i.fetchedAt); const g = groups[groups.length - 1]; if (g && g.day === d) g.items.push(i); else groups.push({ day: d, items: [i] }); }
+  for (const g of groups) g.items.sort((a, b) => (Number(b.importance) || 2) - (Number(a.importance) || 2) || String(b.date).localeCompare(String(a.date)));   // внутри дня важное выше
   const body = list.length
     ? groups.map(g => `<div class="sg-day"><div class="sg-day-title">${esc(fmtDate(g.day, { weekday: true }))}</div>${g.items.map(itemRow).join('')}</div>`).join('')
     : `<div class="card tiny muted" style="text-align:center">${filter === 'unread' ? 'Всё прочитано' : 'Здесь пусто'}</div>`;
   return `
-    ${statLine([unread ? `непрочитано <b>${unread}</b>` : 'всё прочитано', `источников <b>${activeSources().length}</b>`, refreshNote ? [refreshNote, 'good'] : `обновлено ${ago(lastRefreshAt())}`])}
+    ${statLine([unread ? `непрочитано <b>${unread}</b>` : 'всё прочитано', `источников <b>${activeSources().length}</b>`, refreshNote ? [refreshNote, 'good'] : `обновлено ${ago(lastRefreshAt())}`, tp ? [`размечаю ${tp.done} из ${tp.total}…`, 'accent'] : left ? [`не размечено <b>${left}</b>`, 'muted'] : ''])}
     <div class="row between wrap" style="gap:8px;margin:12px 0">
       <div class="chips nchips">${chips.join('')}</div>
-      ${unread && filter !== 'saved' ? `<button type="button" class="btn sm secondary" data-action="sg-read-all">${icon('check')} Прочитано всё</button>` : ''}
+      <div class="row wrap" style="gap:6px">
+        ${left && aiReady() && !tp ? `<button type="button" class="btn sm secondary" data-action="sg-tag">${icon('zap')} Разметить</button>` : ''}
+        ${unread && filter !== 'saved' ? `<button type="button" class="btn sm secondary" data-action="sg-read-all">${icon('check')} Прочитано всё</button>` : ''}
+      </div>
     </div>
+    ${topicChips.length ? `<div class="chips nchips sg-topics" style="margin:-4px 0 12px">${topicChips.join('')}</div>` : ''}
     <div class="sg-feed" data-block="signals-feed" data-block-title="Лента">${body}</div>`;
 }
 
 function itemRow(i) {
   const open = expanded.has(i.id);
   const host = (() => { try { return new URL(i.link).host.replace(/^www\./, ''); } catch { return ''; } })();
-  return `<article class="sg-item ${i.read ? 'is-read' : ''} ${i.saved ? 'is-saved' : ''} ${open ? 'is-open' : ''}" data-id="${esc(i.id)}">
+  const dups = dupsOf(i.id); const dupsOpen = expanded.has('dups:' + i.id);
+  return `<article class="sg-item ${i.read ? 'is-read' : ''} ${i.saved ? 'is-saved' : ''} ${open ? 'is-open' : ''} ${i.importance === 3 ? 'is-hot' : i.importance === 1 ? 'is-low' : ''}" data-id="${esc(i.id)}">
     <div class="sg-item-head">
       <span class="sg-src">${esc(srcName(i.sourceId))}</span><span class="sg-time">${timeOf(i.date)}</span>
+      ${i.topic ? `<button type="button" class="tag sg-topic" data-sg-topic="${esc(i.topic)}">${esc(i.topic)}</button>` : ''}
+      ${i.importance === 3 ? '<span class="pill warn">важно</span>' : i.importance === 1 ? '<span class="tiny faint">фон</span>' : ''}
       ${i.saved ? `<span class="pill accent">${icon('bookmark')}</span>` : ''}
+      ${dups.length ? `<button type="button" class="link sg-dups-btn" data-action="sg-dups" data-id="${esc(i.id)}">+${dups.length} ${plural(dups.length, 'похожая', 'похожие', 'похожих')}</button>` : ''}
     </div>
+    ${dups.length && dupsOpen ? `<div class="sg-dups">${dups.map(d => `<div class="tiny"><span class="muted">${esc(srcName(d.sourceId))}:</span> ${d.link ? `<a href="${esc(d.link)}" target="_blank" rel="noopener">${esc(d.title)}</a>` : esc(d.title)}</div>`).join('')}</div>` : ''}
     <button type="button" class="sg-title" data-action="sg-toggle" data-id="${esc(i.id)}">${esc(i.title)}</button>
     ${i.summary && i.summary !== i.title ? `<div class="sg-summary ${open ? '' : 'clamp'}">${esc(i.summary)}</div>` : ''}
     <div class="sg-actions">
@@ -126,6 +144,9 @@ function digestView() {
     <div class="section-title"><h2>${icon('target')} Что мне важно</h2></div>
     <div class="tiny muted" style="margin-bottom:8px">Помощник будет выделять это в сводке первым. Например: «продуктовые запуски, AI-инструменты, рынок финтеха, решения регуляторов».</div>
     <textarea class="input" data-sg-focus rows="2" placeholder="Темы, компании, люди — через запятую">${esc(s.signalsFocus || '')}</textarea>
+    <div class="tiny muted" style="margin:12px 0 6px">Темы для разметки ленты (через запятую). Модель относит каждую новость к одной из них, оценивает важность и склеивает повторы.</div>
+    <input class="input" data-sg-topics value="${esc(topics().join(', '))}" placeholder="${esc(DEFAULT_TOPICS.join(', '))}">
+    <label class="row tiny muted" style="gap:8px;margin-top:10px"><input type="checkbox" data-sg-autotag ${s.signalsAutoTag !== false ? 'checked' : ''}> Размечать новые записи автоматически после обновления ленты</label>
   </div>`;
   const past = digests().filter(d => d.id !== dg?.id);
   const history = past.length ? `<details class="sg-past" data-block="signals-past" data-block-title="Прошлые сводки"><summary class="btn secondary sm">${icon('clock')} Прошлые сводки · ${past.length}</summary>
@@ -217,6 +238,11 @@ export async function render(root, { params }) {
   on(root, 'click', '[data-action="sg-go-digest"]', () => { tab = 'digest'; rerender(); if (!todayDigest() && !digestBusy) buildDigest(); });
   on(root, 'click', '[data-sg-filter]', (e, el) => { filter = el.dataset.sgFilter; rerender(); });
   on(root, 'click', '[data-sg-src]', (e, el) => { srcFilter = srcFilter === el.dataset.sgSrc ? '' : el.dataset.sgSrc; rerender(); });
+  on(root, 'click', '[data-sg-topic]', (e, el) => { topicFilter = topicFilter === el.dataset.sgTopic ? '' : el.dataset.sgTopic; tab = 'feed'; rerender(); });
+  on(root, 'click', '[data-action="sg-dups"]', (e, el) => { const k = 'dups:' + el.dataset.id; if (expanded.has(k)) expanded.delete(k); else expanded.add(k); rerender(); });
+  on(root, 'click', '[data-action="sg-tag"]', () => doTag());
+  on(root, 'change', '[data-sg-topics]', (e, el) => { const list = [...new Set(el.value.split(/[,;\n]/).map(x => x.trim()).filter(Boolean))]; db.setSettings({ signalsTopics: list.length ? list : null }); toast('Темы сохранены'); rerender(); });
+  on(root, 'change', '[data-sg-autotag]', (e, el) => { db.setSettings({ signalsAutoTag: el.checked }); });
   on(root, 'click', '[data-action="sg-refresh"]', () => doRefresh());
   on(root, 'click', '[data-action="sg-read-all"]', () => {
     let list = items().filter(i => !i.read); if (srcFilter) list = list.filter(i => i.sourceId === srcFilter);
@@ -271,6 +297,13 @@ export async function render(root, { params }) {
     refreshNote = ''; rerender();
     const r = await refreshAll({ onProgress: () => rerender() });
     if (r) { refreshNote = r.added ? `+${r.added} ${plural(r.added, 'новая', 'новые', 'новых')}` : 'новых нет'; if (r.failed) toast(`Не загрузились: ${r.failed} ${plural(r.failed, 'источник', 'источника', 'источников')}`); }
+    rerender();
+    if (db.settings().signalsAutoTag !== false && untagged().length && aiReady()) doTag();
+  }
+  async function doTag() {
+    if (isTagging() || !aiReady()) return;
+    const r = await tagNew({ onProgress: () => rerender() });
+    if (r?.done) toast(`Размечено: ${r.done}${r.errors ? `, с ошибками: ${r.errors}` : ''}`);
     rerender();
   }
   async function buildDigest() {

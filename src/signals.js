@@ -17,6 +17,10 @@ import { db } from './db.js';
 import { today, addDays } from './ui.js';
 
 export const KINDS = { rss: 'Лента', telegram: 'Telegram', site: 'Сайт' };
+// Темы для разметки новостей моделью; пользователь может задать свои в разделе (settings.signalsTopics).
+export const DEFAULT_TOPICS = ['Политика', 'iGaming', 'Регуляция', 'Апдейты', 'Идеи бизнесов', 'Рынок', 'AI', 'Другое'];
+export function topics() { const t = db.settings().signalsTopics; return Array.isArray(t) && t.length ? t : DEFAULT_TOPICS; }
+export const IMPORTANCE = { 3: 'важно', 2: '', 1: 'фон' };
 const PUBLIC_PROXIES = [
   'https://api.allorigins.win/raw?url={url}',
   'https://api.codetabs.com/v1/proxy?quest={url}',
@@ -221,7 +225,22 @@ export function removeSource(id) {
 // ---------- записи ----------
 function hash(str) { let h = 5381; for (let i = 0; i < str.length; i++) h = ((h << 5) + h + str.charCodeAt(i)) | 0; return (h >>> 0).toString(36); }
 export const items = () => db.all('signalItems');
-export const unreadCount = () => items().filter(i => !i.read).length;
+export const isPrimary = (i) => !i.dupOf;                                  // не склеено с другой новостью
+export const unreadCount = () => items().filter(i => !i.read && isPrimary(i)).length;
+export const untagged = () => items().filter(i => !i.tagged && isPrimary(i));
+export const dupsOf = (id) => items().filter(i => i.dupOf === id);
+// Применить разметку: { id: { topic, importance, dupOf } }. Дубли отмечаются прочитанными, чтобы не считались новыми.
+export function applyTags(map) {
+  const list = topics();
+  const norm = (t) => { const s = String(t || '').trim().toLowerCase(); return list.find(x => x.toLowerCase() === s) || list.find(x => s && (x.toLowerCase().includes(s) || s.includes(x.toLowerCase()))) || (list.includes('Другое') ? 'Другое' : list[list.length - 1]); };
+  for (const [id, r] of Object.entries(map)) {
+    const it = db.get('signalItems', id); if (!it) continue;
+    let dupOf = r.dupOf && r.dupOf !== id && db.get('signalItems', r.dupOf) ? r.dupOf : null;
+    if (dupOf) { const p = db.get('signalItems', dupOf); if (p.dupOf) dupOf = p.dupOf; }   // цепочки не нужны
+    const importance = Math.min(3, Math.max(1, Number(r.importance) || 2));
+    db.update('signalItems', id, { tagged: true, topic: norm(r.topic), importance, dupOf, ...(dupOf ? { read: true } : {}) });
+  }
+}
 
 function storeItems(src, list) {
   const existing = new Set(db.where('signalItems', i => i.sourceId === src.id).map(i => i.id));
@@ -291,7 +310,7 @@ export function staleFor(ms = 60 * 60 * 1000) { const t = lastRefreshAt(); retur
 export function digestInput({ hours = 24, limit = 45, maxChars = 11000 } = {}) {
   const since = Date.now() - hours * 3600 * 1000;
   const srcById = new Map(sources().map(s => [s.id, s]));
-  const live = items().filter(i => srcById.has(i.sourceId) && !srcById.get(i.sourceId).paused).sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  const live = items().filter(i => srcById.has(i.sourceId) && !srcById.get(i.sourceId).paused && isPrimary(i)).sort((a, b) => (Number(b.importance) || 2) - (Number(a.importance) || 2) || String(b.date).localeCompare(String(a.date)));
   let list = live.filter(i => new Date(i.date || i.fetchedAt).getTime() >= since);
   let period = `${hours}h`;
   if (list.length < 8) { list = live; period = 'all'; }   // мало за период — берём последние записи вообще
@@ -306,7 +325,7 @@ export function digestInput({ hours = 24, limit = 45, maxChars = 11000 } = {}) {
   }
   let text = ''; const used = [];
   for (const [n, i] of picked.entries()) {
-    const line = `${n + 1}. [${srcById.get(i.sourceId)?.name || '?'}] ${i.title}${i.summary && i.summary !== i.title ? ` — ${cut(i.summary, 220)}` : ''}\n`;
+    const line = `${n + 1}. [${srcById.get(i.sourceId)?.name || '?'}]${i.topic ? ` {${i.topic}${i.importance === 3 ? ', важно' : ''}}` : ''} ${i.title}${i.summary && i.summary !== i.title ? ` — ${cut(i.summary, 220)}` : ''}${dupsOf(i.id).length ? ` (ещё ${dupsOf(i.id).length} источн.)` : ''}\n`;
     if (text.length + line.length > maxChars) break;
     text += line; used.push(i);
   }
@@ -330,7 +349,7 @@ ${focus ? `Что для пользователя важно в первую о�
 **Ещё заметить** — до 5 пунктов по одной строке.
 **Что это значит для меня** — 1–2 фразы: на что обратить внимание или что стоит сделать${focus ? ', учитывая интересы пользователя' : ''}.
 
-Правила: не выдумывай фактов, которых нет в записях; не повторяй одно и то же событие дважды; объединяй дубли из разных источников; без вступлений и без заключения; если записей мало или они пустые — так и скажи одной строкой.
+Правила: не выдумывай фактов, которых нет в записях; не повторяй одно и то же событие дважды; объединяй дубли из разных источников; в фигурных скобках дана тема и пометка «важно» — важное ставь в «Главное»; без вступлений и без заключения; если записей мало или они пустые — так и скажи одной строкой.
 
 Записи:
 ${inputText}`;
