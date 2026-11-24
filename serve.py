@@ -27,6 +27,8 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 MAX_BYTES = 3 * 1024 * 1024
 UA = 'Mozilla/5.0 (Macintosh) ULTIMATE-Signals/1.0 (personal RSS reader)'
 TG_LOCK = threading.Lock()   # один сбор Telegram за раз
+# Защита Cloudflare перед WHOOP отвергает стандартную подпись Python (ошибка 1010), поэтому запросы к WHOOP идут с подписью браузера
+WHOOP_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36 ULTIMATE/1.0'
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -280,7 +282,7 @@ class Whoop:
 
     def _token_request(self, fields):
         body = urllib.parse.urlencode(fields).encode()
-        req = urllib.request.Request(self.TOKEN, data=body, headers={'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json'})
+        req = urllib.request.Request(self.TOKEN, data=body, headers={'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json', 'User-Agent': WHOOP_UA})
         try:
             with urllib.request.urlopen(req, timeout=30) as r:
                 tok = json.loads(r.read().decode('utf-8'))
@@ -319,7 +321,7 @@ class Whoop:
 
     def _get(self, path, params=None):
         url = f'{self.API}{path}' + (('?' + urllib.parse.urlencode(params)) if params else '')
-        req = urllib.request.Request(url, headers={'Authorization': 'Bearer ' + self.access_token(), 'Accept': 'application/json'})
+        req = urllib.request.Request(url, headers={'Authorization': 'Bearer ' + self.access_token(), 'Accept': 'application/json', 'User-Agent': WHOOP_UA})
         try:
             with urllib.request.urlopen(req, timeout=30) as r:
                 return json.loads(r.read().decode('utf-8'))
