@@ -17,6 +17,7 @@ export const PAGES = [
   { id: 'projects', group: 'Работа',   title: 'Проекты',        short: 'Проекты',  icon: 'layers',    mod: () => import('./pages/projects.js') },
   { id: 'people',   group: 'Работа',   title: 'Люди',           short: 'Люди',     icon: 'users',     mod: () => import('./pages/people.js') },
   { id: 'shadow',   group: 'Работа',   title: 'Shadow',         short: 'Shadow',   icon: 'briefcase', mod: () => import('./pages/shadow.js') },
+  { id: 'chats',    group: 'Работа',   title: 'Чаты',           short: 'Чаты',     icon: 'send',      mod: () => import('./pages/chats.js') },
   { id: 'learning', group: 'Знания',   title: 'Обучение',       short: 'Учёба',    icon: 'brain',     mod: () => import('./pages/learning.js') },
   { id: 'notes',    group: 'Знания',   title: 'Заметки',        short: 'Заметки',  icon: 'library',   mod: () => import('./pages/notes.js') },
   { id: 'kb',       group: 'Знания',   title: 'База знаний',    short: 'База',     icon: 'folder',    mod: () => import('./pages/kb.js') },

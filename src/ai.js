@@ -8,6 +8,7 @@
 import { db } from './db.js';
 import { ceoPerson, ensureCeoPerson, addTask, addNote, setTaskDone, lastContactOf, occursOn } from './model.js';
 import { today, addDays, fmtDate, lastNDays } from './ui.js';
+import { tgData, waitingForMe, searchMessages, fmtMsg, chatName } from './tg.js';
 
 const API_URL = 'https://api.anthropic.com/v1/messages';
 const API_VERSION = '2026-10-21';
@@ -188,6 +189,14 @@ export function buildContext(pageId) {
     if (recent.length) L.push(`\n## Сигналы (новости из источников пользователя)\n` + recent.map(i => `- [${cut(srcs.get(i.sourceId) || '?', 30)}] ${cut(i.title, 110)}${i.summary && i.summary !== i.title ? ` — ${cut(i.summary, 160)}` : ''}`).join('\n'));
     if (dg) L.push('Сводка на сегодня:\n' + cut(dg.text, 1500));
   }
+  // Чаты Telegram: только на странице раздела (переписка не должна раздувать контекст в других разделах)
+  if (pageId === 'chats' && tgData()) {
+    const w = waitingForMe();
+    const recent = tgData().messages.slice(-40);
+    L.push(`\n## Чаты Telegram\nЖдут ответа: ${w.length ? w.map(x => `${x.chat.name} (${Math.round(x.hours)} ч): ${cut(x.msg.text, 80)}`).join('; ') : 'никто'}.`);
+    if (recent.length) L.push('Последние сообщения:\n' + recent.map(m => `- [${chatName(m.chat)}] ${m.me ? 'Я' : cut(m.from, 25)}: ${cut(m.text, 120)}`).join('\n'));
+    L.push('Для вопросов о переписке используй инструмент search_chats (поиск по слову и/или имени чата за 2 недели).');
+  }
   return L.join('\n');
 }
 
@@ -213,6 +222,8 @@ const TOOLS = [
     input_schema: { type: 'object', properties: { personId: { type: 'string' }, text: { type: 'string' }, next: { type: 'string' }, kind: { type: 'string', enum: ['meeting', 'call', 'chat', 'other'] } }, required: ['personId', 'text'] } },
   { name: 'add_idea', description: 'Записать идею в копилку идей (раздел Заметки → Идеи).',
     input_schema: { type: 'object', properties: { title: { type: 'string' }, body: { type: 'string' }, impact: { type: 'integer', description: '1-3' }, effort: { type: 'integer', description: '1-3' } }, required: ['title'] } },
+  { name: 'search_chats', description: 'Найти сообщения в переписке Telegram пользователя за последние 2 недели: по слову/фразе и/или по имени чата или собеседника. Возвращает до 20 сообщений с датами. Используй, когда спрашивают «о чём договорились с…», «что писали в…».',
+    input_schema: { type: 'object', properties: { query: { type: 'string', description: 'слово или фраза; можно пусто' }, chat: { type: 'string', description: 'имя чата или собеседника; можно пусто' }, limit: { type: 'integer' } }, required: [] } },
   { name: 'add_event', description: 'Добавить событие в календарь: встреча, созвон, тренировка. Время в формате HH:MM, повтор: none|daily|weekdays|weekly|monthly.',
     input_schema: { type: 'object', properties: { title: { type: 'string' }, date: { type: 'string', description: 'YYYY-MM-DD' }, time: { type: 'string' }, endTime: { type: 'string' }, place: { type: 'string' }, repeat: { type: 'string', enum: ['none', 'daily', 'weekdays', 'weekly', 'monthly'] } }, required: ['title', 'date'] } },
   { name: 'write_journal', description: 'Записать или дополнить дневник за сегодня. Передавайте только те поля, которые пользователь попросил записать.',
@@ -256,6 +267,11 @@ function runTool(name, input) {
       const rec = db.add('goals', { title: String(input.title || '').trim(), description: input.description || '', areaKey: input.areaKey || 'personal', horizon: input.horizon || 'quarter', deadline: input.deadline || null, status: 'active', keyResults: [], progress: 0 });
       return `Цель создана: «${rec.title}».`;
     }
+    case 'search_chats': {
+      if (!tgData()) return 'Переписка не загружена: откройте раздел «Чаты» на Mac.';
+      const found = searchMessages({ query: input.query || '', chat: input.chat || '', limit: Math.min(Number(input.limit) || 20, 40) });
+      return found.length ? found.map(fmtMsg).join('\n') : 'Ничего не найдено.';
+    }
     case 'add_commitment': {
       const p = db.get('people', input.personId); if (!p) return 'Ошибка: человек не найден.';
       const direction = input.direction === 'theirs' ? 'theirs' : 'mine';
@@ -291,7 +307,7 @@ function runTool(name, input) {
 // ---------- системный промпт ----------
 function systemPrompt(pageId) {
   const s = db.settings();
-  return `Ты — личный помощник в приложении ULTIMATE, персональной системе эффективности${s.name ? ` пользователя по имени ${s.name}` : ''}. Разделы приложения: Сегодня, Календарь (события, расписание, все даты), Цели и задачи (с доской визуализации), Проекты (со стримами и задачами), Shadow (работа с CEO: его задачи, рекомендации, наблюдения), Люди (команда, партнёры, обязательства в обе стороны, журнал контактов), База знаний (разделы пользователя), Привычки, Рефлексия (дневник и недельные обзоры), Обучение, Книги, Здоровье, Тренировки, Питание, Сон, Финансы, Сигналы (новости из выбранных пользователем источников и сводка по ним).
+  return `Ты — личный помощник в приложении ULTIMATE, персональной системе эффективности${s.name ? ` пользователя по имени ${s.name}` : ''}. Разделы приложения: Сегодня, Календарь (события, расписание, все даты), Цели и задачи (с доской визуализации), Проекты (со стримами и задачами), Shadow (работа с CEO: его задачи, рекомендации, наблюдения), Люди (команда, партнёры, обязательства в обе стороны, журнал контактов), База знаний (разделы пользователя), Привычки, Рефлексия (дневник и недельные обзоры), Обучение, Книги, Здоровье, Тренировки, Питание, Сон, Финансы, Сигналы (новости из выбранных пользователем источников и сводка по ним), Чаты (переписка Telegram: кто ждёт ответа, обещания, просьбы).
 
 Ниже дана выжимка реальных данных пользователя на сегодня. Опирайся только на неё и на то, что пользователь пишет; ничего не выдумывай. Если данных не хватает — скажи, чего именно, и задай один точный вопрос.
 
@@ -465,10 +481,10 @@ export async function askOnce(prompt, { pageId = 'today', signal } = {}) {
 
 // Запрос «как есть»: без выжимки данных приложения и без инструментов — для сводки новостей и похожих задач,
 // где весь нужный текст уже в prompt. Поток текста приходит в onText.
-export async function askPlain(prompt, { system = '', onText, signal, maxTokens = 1500 } = {}) {
+export async function askPlain(prompt, { system = '', onText, signal, maxTokens = 1500, json = false } = {}) {
   if (!aiReady()) throw new Error(aiProvider() === 'ollama' ? 'Локальная модель недоступна' : 'Ключ Claude не задан');
   if (aiProvider() === 'ollama') {
-    const body = { model: cfg.ollamaModel || DEFAULT_CFG.ollamaModel, stream: true, options: { temperature: 0.3, num_ctx: 12288, num_predict: maxTokens }, messages: [...(system ? [{ role: 'system', content: system }] : []), { role: 'user', content: prompt }] };
+    const body = { model: cfg.ollamaModel || DEFAULT_CFG.ollamaModel, stream: true, options: { temperature: 0.3, num_ctx: 12288, num_predict: maxTokens }, ...(json ? { format: 'json' } : {}), messages: [...(system ? [{ role: 'system', content: system }] : []), { role: 'user', content: prompt }] };
     let r;
     try { r = await fetch(ollamaUrl() + '/api/chat', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal }); }
     catch (e) { if (e.name === 'AbortError') throw e; ollamaOk = false; throw new Error('Локальная модель недоступна. Она работает на Mac, где установлена Ollama.'); }
@@ -536,6 +552,7 @@ export function quickPrompts(pageId) {
     people: ['Кому я давно не писала и что обещала?', 'Какие обещания горят на этой неделе?', 'Как построить разговор с этим человеком?'],
     kb: ['Чего не хватает в базе знаний по моей роли?', 'Собери оглавление для нового раздела'],
     signals: ['Что из новостей важно для моей работы?', 'О чём стоит рассказать CEO?', 'Сведи новости по одной теме'],
+    chats: ['Кому я должна ответить в первую очередь?', 'О чём мы договорились в рабочем чате?', 'Какие просьбы ко мне висят?'],
   };
   return map[pageId] || ['Что мне стоит сделать сегодня?', 'Дай три совета по моей ситуации'];
 }
