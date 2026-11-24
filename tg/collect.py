@@ -5,13 +5,15 @@
 официальный клиентский API Telegram (библиотека Telethon). Всё остаётся на этом Mac:
 ключи — в tg/config.json, вход — в tg/ultimate.session, сообщения — в tg/data/messages.json.
 
-  python3 collect.py            — дособрать новые сообщения (первый раз: за последние 7 дней)
+  python3 collect.py            — дособрать новые сообщения (первый раз: за последние 7 дней; не чаще раза в 10 минут)
+  python3 collect.py --force    — то же без ограничения по времени
   python3 collect.py --status   — только проверить, выполнен ли вход
   python3 collect.py --login    — интерактивный вход (номер телефона, код из Telegram)
 """
 import asyncio
 import json
 import os
+import random
 import sys
 import time
 from datetime import datetime, timedelta, timezone
@@ -23,8 +25,18 @@ DATA_DIR = os.path.join(HERE, 'data')
 DATA = os.path.join(DATA_DIR, 'messages.json')
 KEEP_DAYS = 14          # сколько дней держим сообщения
 FIRST_DAYS = 7          # глубина первого сбора
-MAX_PER_CHAT = 300      # не больше сообщений на чат за один сбор
-MAX_CHATS = 200         # самые свежие диалоги
+MAX_PER_CHAT = 200      # не больше сообщений на чат за один сбор
+MAX_TOTAL = 1500        # и не больше сообщений за один сбор вообще (остальное дочитается в следующий раз)
+MAX_CHATS = 150         # самые свежие диалоги
+MIN_INTERVAL_MIN = 10   # чаще этого сбор не запускается (кроме --force)
+# Бережный режим, чтобы Telegram не счёл активность подозрительной: между запросами пауза 3–6.5 с вразброс,
+# при flood wait ждём столько, сколько просит Telegram (до 5 минут), один сбор за раз.
+PAUSE = (3.0, 6.5)
+FLOOD_MAX_WAIT = 300
+
+
+async def nap():
+    await asyncio.sleep(random.uniform(*PAUSE))
 
 
 def out(obj):
@@ -64,7 +76,7 @@ async def main(mode):
     from telethon import TelegramClient
     from telethon.tl.types import User, Chat, Channel
 
-    client = TelegramClient(SESSION, api_id, api_hash)
+    client = TelegramClient(SESSION, api_id, api_hash, flood_sleep_threshold=FLOOD_MAX_WAIT)
     if mode == 'login':
         await client.start()          # спросит номер, код и пароль двухэтапной защиты прямо в Терминале
         me = await client.get_me()
@@ -83,8 +95,17 @@ async def main(mode):
         await client.disconnect()
         return
 
-    me = await client.get_me()
     data = load_data()
+    if mode != 'force' and data.get('syncedAt'):
+        try:
+            last = datetime.fromisoformat(data['syncedAt'])
+            if datetime.now(timezone.utc) - last < timedelta(minutes=MIN_INTERVAL_MIN):
+                out({'ok': True, 'added': 0, 'skipped': True, 'chats': len(data.get('chats', {})), 'messages': len(data.get('messages', [])), 'syncedAt': data['syncedAt']})
+                await client.disconnect()
+                return
+        except Exception:
+            pass
+    me = await client.get_me()
     data['me'] = {'id': me.id, 'name': f'{me.first_name or ""} {me.last_name or ""}'.strip()}
     now = datetime.now(timezone.utc)
     first_edge = now - timedelta(days=FIRST_DAYS)
@@ -96,7 +117,15 @@ async def main(mode):
 
     added = 0
     chats_seen = 0
+    names = {}                                  # имена собеседников из списка диалогов — без лишних запросов
+    dialogs = []
     async for dlg in client.iter_dialogs(limit=MAX_CHATS):
+        dialogs.append(dlg)
+        if isinstance(dlg.entity, User):
+            names[dlg.entity.id] = f'{dlg.entity.first_name or ""} {dlg.entity.last_name or ""}'.strip() or dlg.entity.username or ''
+    for dlg in dialogs:
+        if added >= MAX_TOTAL:
+            break
         ent = dlg.entity
         if isinstance(ent, User):
             if ent.bot or ent.deleted or ent.is_self:
@@ -122,8 +151,11 @@ async def main(mode):
                      'lastAt': dlg.date.isoformat() if dlg.date else None})
         data['chats'][cid] = chat
         min_id = last_id.get(cid, 0)
+        if min_id and dlg.message and dlg.message.id <= min_id:
+            continue                   # в этом чате ничего нового — запрос не нужен
+        await nap()
         try:
-            async for msg in client.iter_messages(ent, limit=MAX_PER_CHAT, min_id=min_id):
+            async for msg in client.iter_messages(ent, limit=min(MAX_PER_CHAT, MAX_TOTAL - added), min_id=min_id, wait_time=random.uniform(*PAUSE)):
                 if not msg.date or msg.date < first_edge and not min_id:
                     break
                 text = msg.message or ''
@@ -135,13 +167,12 @@ async def main(mode):
                 sender_name = ''
                 is_me = bool(msg.out)
                 if not is_me:
-                    try:
-                        s = await msg.get_sender()
-                        if s is not None:
-                            sender_name = (f'{getattr(s, "first_name", "") or ""} {getattr(s, "last_name", "") or ""}'.strip()
-                                           or getattr(s, 'title', '') or getattr(s, 'username', '') or '')
-                    except Exception:
-                        sender_name = ''
+                    s = msg.sender            # уже пришёл вместе с сообщениями; отдельный запрос не делаем
+                    if s is not None:
+                        sender_name = (f'{getattr(s, "first_name", "") or ""} {getattr(s, "last_name", "") or ""}'.strip()
+                                       or getattr(s, 'title', '') or getattr(s, 'username', '') or '')
+                    if not sender_name:
+                        sender_name = names.get(msg.sender_id, '') or (name if kind == 'user' else '')
                 key = (cid, msg.id)
                 if key in known:
                     continue
@@ -154,6 +185,8 @@ async def main(mode):
                 added += 1
         except Exception as e:  # один проблемный чат не должен ломать весь сбор
             chat['error'] = e.__class__.__name__
+            if 'FloodWait' in e.__class__.__name__:
+                break                  # Telegram просит подождать дольше лимита — остальное дочитаем в следующий раз
 
     # Чистка: старые сообщения и чаты, которых больше нет в списке
     data['messages'] = [m for m in data['messages'] if m['date'] >= keep_edge.isoformat()]
@@ -172,6 +205,8 @@ if __name__ == '__main__':
         mode = 'status'
     elif '--login' in sys.argv:
         mode = 'login'
+    elif '--force' in sys.argv:
+        mode = 'force'
     try:
         asyncio.run(main(mode))
     except KeyboardInterrupt:
