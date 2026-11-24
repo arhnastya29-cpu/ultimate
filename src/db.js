@@ -98,12 +98,21 @@ function idbGetAll(idb) {
 
 function idbPut(idb, key, value) {
   return new Promise((resolve) => {
-    const tx = idb.transaction(STORE, 'readwrite');
-    tx.objectStore(STORE).put(value, key);
-    tx.oncomplete = () => resolve(true);
-    tx.onerror = () => resolve(false);
+    try {
+      const tx = idb.transaction(STORE, 'readwrite');
+      tx.objectStore(STORE).put(value, key);
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+      tx.onabort = () => resolve(false);
+    } catch (e) { console.warn('IndexedDB put failed', e); resolve(false); }
   });
 }
+
+// Запасное место на случай, если IndexedDB не принимает записи: localStorage 'lifeos_fb' = { key: { at, value } }.
+const FB_KEY = 'lifeos_fb';
+function fbAll() { try { return JSON.parse(localStorage.getItem(FB_KEY) || '{}') || {}; } catch { return {}; } }
+function fbWrite(key, value) { try { const all = fbAll(); all[key] = { at: Date.now(), value }; localStorage.setItem(FB_KEY, JSON.stringify(all)); return true; } catch (e) { console.warn('fallback persist failed', e); return false; } }
+function fbDrop(key) { try { const all = fbAll(); if (!(key in all)) return; delete all[key]; if (Object.keys(all).length) localStorage.setItem(FB_KEY, JSON.stringify(all)); else localStorage.removeItem(FB_KEY); } catch {} }
 
 function idbClear(idb) {
   return new Promise((resolve) => {
@@ -133,8 +142,15 @@ class Store {
     else {
       try { raw = JSON.parse(localStorage.getItem('lifeos') || '{}'); } catch { raw = {}; }
     }
+    // Записи, которые в прошлый раз не влезли в IndexedDB и легли в запасное место, — они новее.
+    const fb = this.idb ? fbAll() : {};
+    for (const [k, v] of Object.entries(fb)) raw[k] = v.value;
     for (const c of COLLECTIONS) if (Array.isArray(raw[c])) this.data[c] = raw[c];
     if (raw.tombstones && typeof raw.tombstones === 'object') this.tombstones = raw.tombstones;
+    // Проверка, что база вообще принимает записи (иначе данные пропадут при перезагрузке).
+    this.probeOk = this.idb ? await idbPut(this.idb, '__probe', Date.now()) : true;
+    if (this.idb && this.probeOk) for (const k of Object.keys(fb)) this._persist(k);   // вернуть запасные записи в базу
+    if (this.idb && !this.probeOk) window.dispatchEvent(new CustomEvent('ultimate:storage', { detail: { key: '__probe', via: 'none' } }));
     if (raw.settings && typeof raw.settings === 'object') this._settings = { ...DEFAULT_SETTINGS, ...raw.settings };
     // Однократная миграция на Deep Space: старые настройки могли хранить светлую/авто тему.
     if ((raw.settings || {}).themeV !== DEFAULT_SETTINGS.themeV) {
@@ -147,18 +163,29 @@ class Store {
   _persist(key) {
     // Дебаунс записи на коллекцию, чтобы не долбить диск при серии изменений.
     if (this._pending.has(key)) clearTimeout(this._pending.get(key));
-    this._pending.set(key, setTimeout(() => {
+    this._pending.set(key, setTimeout(async () => {
       this._pending.delete(key);
       const value = key === 'settings' ? this._settings : key === 'tombstones' ? this.tombstones : this.data[key];
-      if (this.idb) idbPut(this.idb, key, value);
+      let via = 'none';
+      if (this.idb && await idbPut(this.idb, key, value)) { via = 'idb'; fbDrop(key); }
+      else if (this.idb) { if (fbWrite(key, value)) via = 'local'; }        // IndexedDB не записал — запасное место, вернём в базу при следующем запуске
       else {
         try {
           const all = JSON.parse(localStorage.getItem('lifeos') || '{}');
           all[key] = value;
           localStorage.setItem('lifeos', JSON.stringify(all));
+          via = 'local';
         } catch (e) { console.warn('persist failed', e); }
       }
+      this.lastPersist = { at: new Date().toISOString(), key, via };
+      if (via !== 'idb' && this.idb) { console.error('IndexedDB не принял запись', key); window.dispatchEvent(new CustomEvent('ultimate:storage', { detail: { key, via } })); }
     }, 120));
+  }
+
+  // Состояние хранилища для Настроек: где лежат данные и прошла ли последняя запись.
+  storageInfo() {
+    const n = COLLECTIONS.reduce((s, c) => s + this.data[c].length, 0);
+    return { engine: this.idb ? 'IndexedDB' : 'localStorage', probeOk: this.probeOk, records: n, last: this.lastPersist, fallback: Object.keys(fbAll()).length };
   }
 
   _emit(col) { for (const fn of this.subs) { try { fn(col); } catch (e) { console.error(e); } } }

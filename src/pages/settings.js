@@ -178,7 +178,8 @@ export async function render(root) {
       <div class="stack">
         <div class="card">
           <h3>Данные</h3>
-          <p class="muted small" style="margin-bottom:12px">Всё хранится локально в этом браузере (IndexedDB). Записей: <b>${fmtNum(counts)}</b>. Делайте резервную копию раз в неделю — файл можно импортировать на другом устройстве.</p>
+          <p class="muted small" style="margin-bottom:12px">Всё хранится локально в этом браузере (${esc(db.storageInfo().engine)}). Записей: <b>${fmtNum(counts)}</b>. Делайте резервную копию раз в неделю — файл можно импортировать на другом устройстве.</p>
+          ${(() => { const st = db.storageInfo(); const bad = st.probeOk === false || (st.last && st.last.via !== 'idb' && st.engine === 'IndexedDB'); return `<p class="small ${bad ? 'bad' : 'muted'}" style="margin-bottom:12px">${bad ? `Браузер не даёт записывать в базу: данные держатся в запасном месте (${st.fallback} ${st.fallback === 1 ? 'раздел' : 'разделов'}), оно небольшое. Сделайте экспорт и перезапустите браузер.` : `Хранилище в порядке${st.last ? `, последняя запись ${esc(fmtDate(st.last.at.slice(0, 10)))} ${st.last.at.slice(11, 16)}` : ''}.`}</p>`; })()}
           <div class="row wrap">
             <button class="btn secondary" data-export>${icon('download')} Экспорт JSON</button>
             <button class="btn secondary" data-import>${icon('upload')} Импорт JSON</button>

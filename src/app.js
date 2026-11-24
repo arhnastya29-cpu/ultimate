@@ -291,6 +291,8 @@ paintSkeleton();
   watchCelebrations();
   initSync();
   initAiPanel();
+  let storageWarned = false;
+  window.addEventListener('ultimate:storage', () => { if (storageWarned) return; storageWarned = true; toast('Браузер не даёт сохранить данные в базу — сделайте экспорт в Настройках', 6000); });
   const last = localStorage.getItem('lifeos_lastExport');
   if (last && Date.now() - Number(last) > 7 * 86400000) toast('Прошла неделя с последнего бэкапа — экспортируйте данные в Настройках');
 })();
