@@ -158,6 +158,33 @@ class Handler(SimpleHTTPRequestHandler):
                 TG_LOCK.release()
         return self._json(404, {'error': 'нет такого действия'})
 
+    def do_POST(self):
+        path = urllib.parse.urlsplit(self.path)
+        if path.path == '/__whoop/config':
+            # Ключи приложения WHOOP из формы в Настройках: сохраняются только в whoop/config.json на этом Mac
+            try:
+                n = int(self.headers.get('Content-Length') or 0)
+                body = json.loads(self.rfile.read(n).decode('utf-8') or '{}')
+                cid = str(body.get('client_id', '')).strip()
+                sec = str(body.get('client_secret', '')).strip()
+                if not cid or not sec:
+                    return self._json(400, {'ok': False, 'error': 'Нужны оба ключа: Client ID и Client Secret'})
+                w = Whoop(os.path.join(ROOT, 'whoop'))
+                w._write(w.cfg_file, {'client_id': cid, 'client_secret': sec})
+                return self._json(200, {'ok': True})
+            except Exception as e:
+                return self._json(400, {'ok': False, 'error': str(e)[:200]})
+        self.send_response(404)
+        self._cors()
+        self.end_headers()
+
+    def do_OPTIONS(self):
+        self.send_response(204)
+        self._cors()
+        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+        self.end_headers()
+
     def _fetch(self, url):
         u = urllib.parse.urlsplit(url)
         if u.scheme not in ('http', 'https') or not u.netloc:

@@ -26,6 +26,15 @@ async function call(action, params = {}, { timeout = 15000 } = {}) {
     return await r.json();
   } finally { clearTimeout(tm); }
 }
+// Сохранить ключи приложения WHOOP на сервере (whoop/config.json). Значения уходят только на 127.0.0.1.
+export async function saveConfig(clientId, clientSecret) {
+  const b = await base();
+  if (b === null) throw new Error('Нет связи с сервером ULTIMATE на Mac: откройте приложение через start.command.');
+  const r = await fetch(`${b}/__whoop/config`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ client_id: clientId, client_secret: clientSecret }) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || !j.ok) throw new Error(j.error || `сервер ответил ${r.status}`);
+  return refreshStatus();
+}
 export async function connectUrl() { const b = await base(); return b === null ? null : `${b || location.origin}/__whoop/connect`; }
 export async function refreshStatus() { status = await call('status'); window.dispatchEvent(new Event('ultimate:whoop')); return status; }
 export async function disconnect() { await call('disconnect'); return refreshStatus(); }

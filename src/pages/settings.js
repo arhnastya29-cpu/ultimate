@@ -4,7 +4,7 @@ import { canInstall, promptInstall, isStandalone, onInstallChange } from '../pwa
 import { status as syncStatus, onChange as onSyncChange, enable as syncEnable, disable as syncDisable, syncNow } from '../sync.js';
 import { aiConfig, setAiConfig, aiReady, testKey, MODELS, aiProvider, probeOllama, ollamaStatus } from '../ai.js';
 import { PAGES } from '../app.js';
-import { whoopStatus, refreshStatus as whoopRefresh, sync as whoopSync, disconnect as whoopDisconnect, connectUrl as whoopConnectUrl, isSyncing as whoopSyncing, lastSyncAt as whoopLastSync, whoopUsed } from '../whoop.js';
+import { whoopStatus, refreshStatus as whoopRefresh, saveConfig as whoopSaveConfig, sync as whoopSync, disconnect as whoopDisconnect, connectUrl as whoopConnectUrl, isSyncing as whoopSyncing, lastSyncAt as whoopLastSync, whoopUsed } from '../whoop.js';
 
 // Пресеты модулей: какие разделы включены в меню. Остальные остаются доступными (скрыты из меню).
 export const PRESETS = {
@@ -121,11 +121,15 @@ function whoopBlock() {
   const local = st !== null;
   const steps = `<ol class="tg-steps">
       <li>Откройте <b>developer-dashboard.whoop.com</b>, войдите своим аккаунтом WHOOP, создайте команду и приложение (любое название). Отметьте все права на чтение и укажите адрес возврата: <code>${esc(st?.redirectUri || 'http://127.0.0.1:8765/__whoop/callback')}</code>.</li>
-      <li>Скопируйте Client ID и Client Secret в файл <b>whoop/config.json</b> в папке lifeos (образец рядом: config.example.json).</li>
+      <li>Скопируйте Client ID и Client Secret в поля ниже и нажмите «Сохранить ключи». Они остаются на этом Mac.</li>
       <li>Нажмите «Подключить WHOOP»: откроется страница WHOOP, разрешите доступ — и данные подтянутся.</li>
-    </ol>`;
+    </ol>
+    <form class="form" data-whoop-config style="margin-top:10px">
+      ${formRow(field({ name: 'client_id', label: 'Client ID', placeholder: 'из кабинета WHOOP', required: true }), field({ name: 'client_secret', label: 'Client Secret', type: 'password', placeholder: 'из кабинета WHOOP', required: true }))}
+      <div class="row wrap" style="gap:8px"><button type="submit" class="btn">${icon('check')} Сохранить ключи</button><button type="button" class="btn secondary" data-whoop-check>${icon('refresh')} Проверить</button></div>
+    </form>`;
   if (!local) return `<p class="muted small">WHOOP подключается на Mac, где запущен start.command: там хранятся ключи и оттуда забираются данные. ${whoopUsed() ? 'Данные уже приходят сюда через синхронизацию.' : ''}</p>`;
-  if (!st?.configured) return `<p class="muted small" style="margin-bottom:8px">Сон, восстановление, нагрузка и тренировки из WHOOP будут попадать в «Сон и энергия», «Тренировки» и на главную.</p>${steps}<div class="row wrap" style="margin-top:10px"><button type="button" class="btn secondary" data-whoop-check>${icon('refresh')} Проверить</button></div>`;
+  if (!st?.configured) return `<p class="muted small" style="margin-bottom:8px">Сон, восстановление, нагрузка и тренировки из WHOOP будут попадать в «Сон и энергия», «Тренировки» и на главную.</p>${steps}`;
   if (!st?.connected) return `<p class="muted small" style="margin-bottom:8px">Ключи на месте. Осталось разрешить доступ в WHOOP.</p><div class="row wrap"><a class="btn" data-whoop-connect href="#">${icon('link')} Подключить WHOOP</a><button type="button" class="btn secondary" data-whoop-check>${icon('refresh')} Проверить</button></div>`;
   const last = whoopLastSync() || st.lastSync;
   return `<p class="small" style="margin-bottom:8px"><span class="good">WHOOP подключён</span>${st.profile?.first_name ? ` · ${esc(st.profile.first_name)}` : ''} · дней с данными: <b>${st.days || 0}</b>${last ? ` · обновлено ${esc(fmtDate(String(last).slice(0, 10)))} ${String(last).slice(11, 16)}` : ''}</p>
@@ -311,6 +315,13 @@ export async function render(root) {
       history.replaceState(null, '', location.pathname + '#/settings');
     }
   }
+  on(root, 'submit', '[data-whoop-config]', async (e, form) => {
+    e.preventDefault();
+    const d = formData(form);
+    try { await whoopSaveConfig(d.client_id, d.client_secret); toast('Ключи сохранены. Теперь «Подключить WHOOP»'); }
+    catch (err) { toast(String(err.message || err), 5000); }
+    paintWhoop();
+  });
   on(root, 'click', '[data-whoop-check]', async (e, el) => { el.disabled = true; try { await whoopRefresh(); } catch (err) { toast(String(err.message || err), 4000); } paintWhoop(); });
   on(root, 'click', '[data-whoop-connect]', async (e) => { e.preventDefault(); const u = await whoopConnectUrl(); if (u) location.href = u; else toast('Откройте ULTIMATE через start.command на Mac'); });
   on(root, 'click', '[data-whoop-sync]', async (e, el) => { try { const r = await whoopSync({ days: Number(el.dataset.whoopSync) || 7 }); toast(r ? `WHOOP обновлён: дней с данными ${r.days}` : 'Уже обновляется'); } catch (err) { toast(String(err.message || err), 5000); } });
