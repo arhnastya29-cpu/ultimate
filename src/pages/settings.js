@@ -4,6 +4,7 @@ import { canInstall, promptInstall, isStandalone, onInstallChange } from '../pwa
 import { status as syncStatus, onChange as onSyncChange, enable as syncEnable, disable as syncDisable, syncNow } from '../sync.js';
 import { aiConfig, setAiConfig, aiReady, testKey, MODELS, aiProvider, probeOllama, ollamaStatus } from '../ai.js';
 import { PAGES } from '../app.js';
+import { whoopStatus, refreshStatus as whoopRefresh, sync as whoopSync, disconnect as whoopDisconnect, connectUrl as whoopConnectUrl, isSyncing as whoopSyncing, lastSyncAt as whoopLastSync, whoopUsed } from '../whoop.js';
 
 // Пресеты модулей: какие разделы включены в меню. Остальные остаются доступными (скрыты из меню).
 export const PRESETS = {
@@ -115,6 +116,27 @@ function openSyncModal() {
   });
 }
 
+function whoopBlock() {
+  const st = whoopStatus();
+  const local = st !== null;
+  const steps = `<ol class="tg-steps">
+      <li>Откройте <b>developer-dashboard.whoop.com</b>, войдите своим аккаунтом WHOOP, создайте команду и приложение (любое название). Отметьте все права на чтение и укажите адрес возврата: <code>${esc(st?.redirectUri || 'http://127.0.0.1:8765/__whoop/callback')}</code>.</li>
+      <li>Скопируйте Client ID и Client Secret в файл <b>whoop/config.json</b> в папке lifeos (образец рядом: config.example.json).</li>
+      <li>Нажмите «Подключить WHOOP»: откроется страница WHOOP, разрешите доступ — и данные подтянутся.</li>
+    </ol>`;
+  if (!local) return `<p class="muted small">WHOOP подключается на Mac, где запущен start.command: там хранятся ключи и оттуда забираются данные. ${whoopUsed() ? 'Данные уже приходят сюда через синхронизацию.' : ''}</p>`;
+  if (!st?.configured) return `<p class="muted small" style="margin-bottom:8px">Сон, восстановление, нагрузка и тренировки из WHOOP будут попадать в «Сон и энергия», «Тренировки» и на главную.</p>${steps}<div class="row wrap" style="margin-top:10px"><button type="button" class="btn secondary" data-whoop-check>${icon('refresh')} Проверить</button></div>`;
+  if (!st?.connected) return `<p class="muted small" style="margin-bottom:8px">Ключи на месте. Осталось разрешить доступ в WHOOP.</p><div class="row wrap"><a class="btn" data-whoop-connect href="#">${icon('link')} Подключить WHOOP</a><button type="button" class="btn secondary" data-whoop-check>${icon('refresh')} Проверить</button></div>`;
+  const last = whoopLastSync() || st.lastSync;
+  return `<p class="small" style="margin-bottom:8px"><span class="good">WHOOP подключён</span>${st.profile?.first_name ? ` · ${esc(st.profile.first_name)}` : ''} · дней с данными: <b>${st.days || 0}</b>${last ? ` · обновлено ${esc(fmtDate(String(last).slice(0, 10)))} ${String(last).slice(11, 16)}` : ''}</p>
+    <p class="tiny muted" style="margin-bottom:10px">Данные обновляются сами при запуске приложения на Mac, если прошло больше трёх часов.</p>
+    <div class="row wrap">
+      <button type="button" class="btn secondary" data-whoop-sync ${whoopSyncing() ? 'disabled' : ''}>${icon('refresh')} ${whoopSyncing() ? 'Обновляю…' : 'Обновить сейчас'}</button>
+      <button type="button" class="btn secondary" data-whoop-sync="90" ${whoopSyncing() ? 'disabled' : ''}>За 90 дней</button>
+      <button type="button" class="btn secondary" data-whoop-disconnect>Отключить</button>
+    </div>`;
+}
+
 function aiBlock() {
   const c = aiConfig();
   const local = aiProvider() === 'ollama';
@@ -186,6 +208,10 @@ export async function render(root) {
             <input type="file" accept="application/json,.json" hidden id="importFile">
           </div>
           <label class="row tiny muted" style="margin-top:10px;gap:6px"><input type="checkbox" id="mergeImport"> При импорте объединять с текущими данными, а не заменять</label>
+        </div>
+        <div class="card" id="whoopCard">
+          <h3>WHOOP</h3>
+          ${whoopBlock()}
         </div>
         <div class="card" id="uiCard">
           <h3>Интерфейс</h3>
@@ -272,6 +298,24 @@ export async function render(root) {
     if (c) c.innerHTML = `<h3>Синхронизация между устройствами</h3>${syncBlock()}`;
   });
 
+  // WHOOP: статус с локального сервера, подключение, обновление, отключение
+  const paintWhoop = () => { const c = root.querySelector('#whoopCard'); if (c) c.innerHTML = `<h3>WHOOP</h3>${whoopBlock()}`; };
+  window.addEventListener('ultimate:whoop', paintWhoop);
+  whoopRefresh().catch(() => {}).then(paintWhoop);
+  {
+    const m = location.hash.match(/[?&]whoop=([^&]*)/);
+    if (m) {
+      const v = decodeURIComponent(m[1]);
+      if (v === 'ok') { toast('WHOOP подключён, данные загружаются…', 4000); whoopSync({ days: 30 }).then(r => toast(r ? `WHOOP: дней с данными — ${r.days}` : 'WHOOP: уже обновляется')).catch(e => toast(String(e.message || e), 5000)); }
+      else toast('WHOOP: ' + v.replace(/^err:/, ''), 6000);
+      history.replaceState(null, '', location.pathname + '#/settings');
+    }
+  }
+  on(root, 'click', '[data-whoop-check]', async (e, el) => { el.disabled = true; try { await whoopRefresh(); } catch (err) { toast(String(err.message || err), 4000); } paintWhoop(); });
+  on(root, 'click', '[data-whoop-connect]', async (e) => { e.preventDefault(); const u = await whoopConnectUrl(); if (u) location.href = u; else toast('Откройте ULTIMATE через start.command на Mac'); });
+  on(root, 'click', '[data-whoop-sync]', async (e, el) => { try { const r = await whoopSync({ days: Number(el.dataset.whoopSync) || 7 }); toast(r ? `WHOOP обновлён: дней с данными ${r.days}` : 'Уже обновляется'); } catch (err) { toast(String(err.message || err), 5000); } });
+  on(root, 'click', '[data-whoop-disconnect]', async () => { if (!confirm('Отключить WHOOP? Уже загруженные данные останутся.')) return; await whoopDisconnect(); toast('WHOOP отключён'); });
+
   on(root, 'click', '[data-install]', async () => { await promptInstall(); });
   const offInstall = onInstallChange(() => {
     const c = root.querySelector('#installCard');
@@ -310,5 +354,5 @@ export async function render(root) {
     await db.clearAll();
     toast('Все данные удалены');
   });
-  return () => { offInstall(); offSync(); };
+  return () => { offInstall(); offSync(); window.removeEventListener('ultimate:whoop', paintWhoop); };
 }

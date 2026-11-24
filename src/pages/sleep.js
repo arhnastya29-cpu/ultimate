@@ -1,6 +1,7 @@
 import { db } from '../db.js';
 import { esc, icon, field, formRow, formData, toast, on, today, addDays, lastNDays, fmtDate, fmtNum, avg, sum, sortBy, emptyAction, statLine, pageMenu, barChart, lineChart, dateNav, weekdayShort, plural } from '../ui.js';
 import { checkinOn, setCheckin, energyOn } from '../model.js';
+import { whoopOn, recoveryClass, recoveryWord } from '../whoop.js';
 
 export const title = 'Сон и энергия';
 
@@ -113,6 +114,7 @@ export async function render(root, ctx) {
     if (l.bedTime || l.wakeTime) bits.push(`${esc(l.bedTime || '—')} → ${esc(l.wakeTime || '—')}`);
     if (l.quality) bits.push(`качество ${esc(l.quality)}/5`);
     if (en) bits.push(`энергия ${esc(en)}/5`);
+    const wd = whoopOn(l.date); if (wd?.recovery != null) bits.push(`<span class="${recoveryClass(wd.recovery)}">recovery ${Math.round(wd.recovery)}%</span>`);
     return `<div class="list-item">
       <div class="main" data-pick="${esc(l.date)}" tabindex="0" role="button">
         <div class="title">${esc(fmtDate(l.date, { weekday: true }))}</div>
@@ -138,6 +140,16 @@ export async function render(root, ctx) {
         <form class="card form day-card" id="sleepForm" data-block="sleep-form" data-block-title="Запись сна">
           <div class="row between"><h3 style="margin:0">Сон · ${esc(fmtDate(day, { weekday: true }))}</h3>${cur ? '<span class="pill good">Записано</span>' : ''}</div>
           <p class="tiny muted" style="margin:0">Дата — день пробуждения. Часы считаются по времени отбоя и подъёма, их можно поправить.</p>
+          ${(() => { const w = whoopOn(day); if (!w) return ''; return `<div class="whoop-box" data-block="whoop-day" data-block-title="WHOOP">
+            <div class="row wrap" style="gap:14px">
+              ${w.recovery != null ? `<div><div class="label">Recovery</div><div class="value ${recoveryClass(w.recovery)}" style="font-size:22px">${Math.round(w.recovery)}%</div><div class="tiny muted">${recoveryWord(w.recovery)}</div></div>` : ''}
+              ${w.hrv != null ? `<div><div class="label">HRV</div><div class="value" style="font-size:22px">${Math.round(w.hrv)}<small> мс</small></div></div>` : ''}
+              ${w.rhr != null ? `<div><div class="label">Пульс покоя</div><div class="value" style="font-size:22px">${Math.round(w.rhr)}</div></div>` : ''}
+              ${w.performance != null ? `<div><div class="label">Сон</div><div class="value" style="font-size:22px">${Math.round(w.performance)}%</div><div class="tiny muted">от нужных ${w.sleepNeededHours ? fmtNum(w.sleepNeededHours, 1) + ' ч' : ''}</div></div>` : ''}
+              ${w.strain != null ? `<div><div class="label">Нагрузка</div><div class="value" style="font-size:22px">${fmtNum(w.strain, 1)}</div></div>` : ''}
+            </div>
+            ${w.remMin != null ? `<div class="tiny muted" style="margin-top:8px">Фазы: глубокий ${w.deepMin} мин · REM ${w.remMin} мин · лёгкий ${w.lightMin} мин · бодрствование ${w.awakeMin} мин${w.disturbances != null ? ` · пробуждений ${w.disturbances}` : ''}${w.respiratoryRate ? ` · дыхание ${fmtNum(w.respiratoryRate, 1)}/мин` : ''}</div>` : ''}
+          </div>`; })()}
           ${formRow(
             field({ name: 'bedTime', label: 'Лёг спать', type: 'time', value: cur?.bedTime || '' }),
             field({ name: 'wakeTime', label: 'Проснулся', type: 'time', value: cur?.wakeTime || '' }),

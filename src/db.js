@@ -30,6 +30,7 @@ export const COLLECTIONS = [
   'transactions', 'budgets', 'financeGoals',
   'journal', 'weeklyReviews',
   'signalSources', 'signalItems', 'signalDigests',
+  'whoopDays',
 ];
 
 export const DEFAULT_SETTINGS = {

@@ -6,3 +6,9 @@ tg/*.session
 tg/*.session-journal
 tg/data/
 tg/.venv/
+# WHOOP: ключи, токены и данные остаются на Mac
+whoop/config.json
+whoop/tokens.json
+whoop/data.json
+whoop/*.tmp
+whoop/state.txt

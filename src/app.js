@@ -291,6 +291,7 @@ paintSkeleton();
   await renderPage(true);
   watchCelebrations();
   initSync();
+  import('./whoop.js').then(m => m.autoSync()).catch(() => {});
   initAiPanel();
   let storageWarned = false;
   window.addEventListener('ultimate:storage', () => { if (storageWarned) return; storageWarned = true; toast('Браузер не даёт сохранить данные в базу — сделайте экспорт в Настройках', 6000); });

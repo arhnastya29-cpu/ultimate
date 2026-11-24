@@ -7,6 +7,7 @@ import { composeBlocks, bindCustomize } from '../blocks.js';
 import { greetingFor, dailyQuote, quoteHtml, cheer, habitCheer } from '../motivation.js';
 import { openCapture } from '../capture.js';
 import { aiReady, askOnce, aiProvider } from '../ai.js';
+import { whoopOn, recoveryClass, recoveryWord } from '../whoop.js';
 import { esc, icon, today, addDays, fmtDate, fmtDateLong, fmtMinutes, fmtNum, fmtMoney, progressBar, checkBtn, on, toast, weekDays, lastNDays, sum, monthKey, plural, daysBetween, clamp, pageMenu, statLine } from '../ui.js';
 import { agendaOn, nextEvent, upcomingDeadlines, overdueItems, isMine, toggleTask, addTask, habitStatus, habitScheduled, setHabitCount, checkinOn, sleepOn, setCheckin, setSleepHours, addWater, projectProgress, goalProgress, moduleOn, ceoPerson, personName, nowHM } from '../model.js';
 
@@ -181,6 +182,16 @@ export async function render(root, { navigate }) {
           </div>
           <input class="input" data-checkin-note placeholder="Заметка о самочувствии (необязательно)" value="${esc(checkin?.notes || '')}" style="margin-top:10px" aria-label="Заметка о самочувствии">` : ''}
         </div>` },
+    { id: 'whoop', title: 'WHOOP', col: 1, html: (() => { const w = whoopOn(d); if (!w || (w.recovery == null && w.sleepHours == null)) return ''; return `<div class="card">
+          <div class="section-title"><h2>${icon('activity')} WHOOP</h2><button type="button" class="link" data-go="sleep">подробнее</button></div>
+          <div class="row wrap" style="gap:16px">
+            ${w.recovery != null ? `<div><div class="label">Recovery</div><div class="value ${recoveryClass(w.recovery)}" style="font-size:22px">${Math.round(w.recovery)}%</div><div class="tiny muted">${recoveryWord(w.recovery)}</div></div>` : ''}
+            ${w.sleepHours != null ? `<div><div class="label">Сон</div><div class="value" style="font-size:22px">${fmtNum(w.sleepHours, 1)}<small> ч</small></div>${w.performance != null ? `<div class="tiny muted">${Math.round(w.performance)}% от нормы</div>` : ''}</div>` : ''}
+            ${w.hrv != null ? `<div><div class="label">HRV</div><div class="value" style="font-size:22px">${Math.round(w.hrv)}</div></div>` : ''}
+            ${w.rhr != null ? `<div><div class="label">Пульс покоя</div><div class="value" style="font-size:22px">${Math.round(w.rhr)}</div></div>` : ''}
+            ${w.strain != null ? `<div><div class="label">Нагрузка</div><div class="value" style="font-size:22px">${fmtNum(w.strain, 1)}</div></div>` : ''}
+          </div>
+        </div>`; })() },
     { id: 'advice', title: 'Совет помощника', col: 2, html: aiReady() ? (() => { const a = loadAdvice(d); return `<div class="card advice-card">
           <div class="section-title"><h2>${icon('zap')} Совет на сегодня</h2><span class="row tiny muted" style="gap:8px">${aiProvider() === 'ollama' ? 'локальная модель' : 'Claude'}${a ? `<button type="button" class="link" data-advice-refresh>обновить</button>` : ''}</span></div>
           ${a ? `<div class="small advice-text">${esc(a.text)}</div>` : adviceBusy ? '<div class="small muted">Думаю над вашими данными…</div>' : `<div class="empty-row"><span>Помощник посмотрит задачи, события и самочувствие и предложит, с чего начать.</span><button type="button" class="btn sm" data-advice-refresh>${icon('zap')} Получить совет</button></div>`}

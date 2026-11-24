@@ -99,3 +99,7 @@
   .body-page .pr-grid { grid-template-columns: 1fr 1fr; }
   .body-page .ring { width: 84px; height: 84px; }
 }
+
+/* WHOOP в карточке сна */
+.whoop-box { margin: 4px 0 2px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); }
+.whoop-box .label { font-size: 11px; color: var(--fg-3); text-transform: uppercase; letter-spacing: .08em; }

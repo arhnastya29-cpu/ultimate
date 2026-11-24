@@ -181,6 +181,10 @@ export function buildContext(pageId) {
   if (notes.length) learn.push(`последние заметки (книги, статьи, подкасты): ${notes.map(n => `«${cut(n.title, 50)}»${n.sourceTitle ? ` из «${cut(n.sourceTitle, 30)}»` : ''}${(n.tags || []).length ? ` #${n.tags.slice(0, 3).join(' #')}` : ''}`).join('; ')}`);
   if (learn.length) L.push(`\n## Развитие\n` + learn.map(b => '- ' + b).join('\n'));
 
+  // WHOOP: восстановление и сон за неделю — полезно для советов на день
+  const wdays = db.all('whoopDays').filter(x => week.includes(x.date)).sort((a, b) => a.date.localeCompare(b.date));
+  if (wdays.length) L.push(`\n## WHOOP (сон и восстановление)\n` + wdays.map(w => `- ${w.date}: recovery ${w.recovery != null ? Math.round(w.recovery) + '%' : '—'}, сон ${w.sleepHours != null ? w.sleepHours + ' ч' : '—'}${w.performance != null ? ` (${Math.round(w.performance)}% от нормы)` : ''}, HRV ${w.hrv != null ? Math.round(w.hrv) : '—'}, пульс покоя ${w.rhr != null ? Math.round(w.rhr) : '—'}, нагрузка ${w.strain != null ? Number(w.strain).toFixed(1) : '—'}`).join('\n'));
+
   // Сигналы: свежие заголовки и сводка — только на странице раздела, чтобы не раздувать контекст
   if (pageId === 'signals') {
     const srcs = new Map(db.all('signalSources').map(x => [x.id, x.name]));
