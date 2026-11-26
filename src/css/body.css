@@ -103,3 +103,43 @@
 /* WHOOP в карточке сна */
 .whoop-box { margin: 4px 0 2px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); }
 .whoop-box .label { font-size: 11px; color: var(--fg-3); text-transform: uppercase; letter-spacing: .08em; }
+
+
+/* Здоровье: хаб с вкладками */
+.hb-tabs { margin-top: -8px; }
+.hb-sub .page-head > div:first-child { display: none; }           /* заголовок подраздела скрыт: он уже в хабе */
+.hb-sub .page-head { margin-bottom: 14px; justify-content: flex-end; }
+.hb-sub .page-head .champ-line { display: none; }
+.hb-overview { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+.hb-col { display: flex; flex-direction: column; gap: 16px; }
+.hb-metrics { display: flex; flex-wrap: wrap; gap: 18px 26px; }
+.hb-metric .label { font-size: 11px; color: var(--fg-3); text-transform: uppercase; letter-spacing: .08em; }
+.hb-metric .value { font-size: 26px; font-weight: 700; font-family: var(--font-num); letter-spacing: -0.02em; line-height: 1.15; }
+.hb-metric .value small { font-size: 13px; font-weight: 500; color: var(--fg-3); }
+.hb-chart { margin-top: 12px; }
+.hb-chart .label { font-size: 11.5px; color: var(--fg-3); margin-bottom: 4px; }
+.hb-chart .chart text { font-size: 11px; fill: var(--fg-3); }
+.hb-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; vertical-align: middle; }
+.hb-q { margin-top: 10px; }
+.hb-q-title { font-size: 13.5px; font-weight: 600; margin-bottom: 6px; }
+.hb-q-title b { font-family: var(--font-num); color: var(--accent); margin-left: 4px; }
+.hb-scale { display: grid; grid-template-columns: repeat(10, 1fr); gap: 4px; position: relative; padding-bottom: 16px; }
+.hb-scale button { min-height: 36px; border: 1px solid var(--line); background: var(--surface-2); color: var(--fg-2); border-radius: 8px; font: 600 13px var(--font-num); cursor: pointer; transition: all .15s; }
+.hb-scale button:hover { border-color: var(--line-2); color: var(--fg); }
+.hb-scale button.active { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+.hb-scale button.lo.active { background: var(--warn); border-color: var(--warn); }
+.hb-scale button.hi.active { background: var(--good); border-color: var(--good); }
+.hb-scale-lo, .hb-scale-hi { position: absolute; bottom: 0; font-size: 10.5px; color: var(--fg-3); }
+.hb-scale-hi { right: 0; }
+.hb-sum { display: flex; flex-direction: column; }
+.hb-sum-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--line); }
+.hb-sum-row:last-child { border-bottom: 0; }
+.hb-sum-row[role=link] { cursor: pointer; }
+.hb-sum-row[role=link]:hover .small { color: var(--accent); }
+.hb-sum-val { font-family: var(--font-num); font-size: 15px; white-space: nowrap; }
+@media (max-width: 860px) {
+  .hb-overview { grid-template-columns: 1fr; }
+  .hb-scale button { min-height: 40px; font-size: 12px; }
+  .hb-metrics { gap: 14px 20px; }
+  .hb-metric .value { font-size: 22px; }
+}

@@ -24,16 +24,13 @@ export const PAGES = [
   { id: 'signals',  group: 'Знания',   title: 'Сигналы',        short: 'Сигналы',  icon: 'rss',       mod: () => import('./pages/signals.js') },
   { id: 'habits',   group: 'Личное',   title: 'Привычки',       short: 'Привычки', icon: 'repeat',    mod: () => import('./pages/habits.js') },
   { id: 'journal',  group: 'Личное',   title: 'Рефлексия',      short: 'Дневник',  icon: 'pen',       mod: () => import('./pages/journal.js') },
-  { id: 'health',   group: 'Личное',   title: 'Здоровье',       short: 'Здоровье', icon: 'heart',     mod: () => import('./pages/health.js') },
-  { id: 'workouts', group: 'Личное',   title: 'Тренировки',     short: 'Спорт',    icon: 'dumbbell',  mod: () => import('./pages/workouts.js') },
-  { id: 'nutrition',group: 'Личное',   title: 'Питание',        short: 'Питание',  icon: 'utensils',  mod: () => import('./pages/nutrition.js') },
-  { id: 'sleep',    group: 'Личное',   title: 'Сон и энергия',  short: 'Сон',      icon: 'moon',      mod: () => import('./pages/sleep.js') },
+  { id: 'health',   group: 'Личное',   title: 'Здоровье',       short: 'Здоровье', icon: 'heart',     mod: () => import('./pages/body.js') },
   { id: 'finance',  group: 'Ресурсы',  title: 'Финансы',        short: 'Финансы',  icon: 'wallet',    mod: () => import('./pages/finance.js') },
   { id: 'settings', group: 'Ресурсы',  title: 'Настройки',      short: 'Настройки',icon: 'settings',  mod: () => import('./pages/settings.js') },
 ];
 const GROUPS = ['Основное', 'Работа', 'Знания', 'Личное', 'Ресурсы'];
 // Старые адреса продолжают работать.
-const ALIASES = { goals: ['plan', { tab: 'goals' }], calendar: ['plan', { tab: 'week' }], books: ['notes', {}] };
+const ALIASES = { goals: ['plan', { tab: 'goals' }], calendar: ['plan', { tab: 'week' }], books: ['notes', {}], sleep: ['health', { tab: 'sleep' }], workouts: ['health', { tab: 'workouts' }], nutrition: ['health', { tab: 'nutrition' }] };
 const WORK_GROUP = 'Работа';
 
 const sidebar = document.getElementById('sidebar');
