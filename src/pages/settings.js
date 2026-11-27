@@ -1,6 +1,6 @@
 import { db, DEFAULT_SETTINGS, COLLECTIONS } from '../db.js';
 import { esc, icon, field, formRow, formData, toast, on, fmtNum, modal, fmtDate } from '../ui.js';
-import { canInstall, promptInstall, isStandalone, onInstallChange } from '../pwa.js';
+import { canInstall, promptInstall, isStandalone, onInstallChange, appVersion, checkUpdate } from '../pwa.js';
 import { status as syncStatus, onChange as onSyncChange, enable as syncEnable, disable as syncDisable, syncNow } from '../sync.js';
 import { aiConfig, setAiConfig, aiReady, testKey, MODELS, aiProvider, probeOllama, ollamaStatus } from '../ai.js';
 import { PAGES } from '../app.js';
@@ -212,6 +212,7 @@ export async function render(root) {
             <input type="file" accept="application/json,.json" hidden id="importFile">
           </div>
           <label class="row tiny muted" style="margin-top:10px;gap:6px"><input type="checkbox" id="mergeImport"> При импорте объединять с текущими данными, а не заменять</label>
+          <div class="row between wrap tiny muted" style="margin-top:12px;gap:8px"><span>Версия приложения: <b data-app-version>…</b></span><button type="button" class="link" data-check-update>проверить обновление</button></div>
         </div>
         <div class="card" id="whoopCard">
           <h3>WHOOP</h3>
@@ -301,6 +302,9 @@ export async function render(root) {
     const c = root.querySelector('#syncCard');
     if (c) c.innerHTML = `<h3>Синхронизация между устройствами</h3>${syncBlock()}`;
   });
+
+  appVersion().then(v => { const el = root.querySelector('[data-app-version]'); if (el) el.textContent = v || 'без офлайн-копии'; });
+  on(root, 'click', '[data-check-update]', async (e, el) => { el.textContent = 'проверяю…'; const found = await checkUpdate().catch(() => false); el.textContent = found ? 'обновление найдено, перезагружаю…' : 'у вас последняя версия'; if (!found) setTimeout(() => { el.textContent = 'проверить обновление'; }, 3000); });
 
   // WHOOP: статус с локального сервера, подключение, обновление, отключение
   const paintWhoop = () => { const c = root.querySelector('#whoopCard'); if (c) c.innerHTML = `<h3>WHOOP</h3>${whoopBlock()}`; };
