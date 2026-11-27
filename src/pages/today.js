@@ -8,6 +8,8 @@ import { greetingFor, dailyQuote, quoteHtml, cheer, habitCheer } from '../motiva
 import { openCapture } from '../capture.js';
 import { aiReady, askOnce, aiProvider } from '../ai.js';
 import { whoopOn, recoveryClass, recoveryWord } from '../whoop.js';
+import { tgData, waitingForMe, quietContacts, chatLink } from '../tg.js';
+import { cleanDigest } from '../signals.js';
 import { esc, icon, today, addDays, fmtDate, fmtDateLong, fmtMinutes, fmtNum, fmtMoney, progressBar, checkBtn, on, toast, weekDays, lastNDays, sum, monthKey, plural, daysBetween, clamp, pageMenu, statLine } from '../ui.js';
 import { agendaOn, nextEvent, upcomingDeadlines, overdueItems, isMine, toggleTask, addTask, habitStatus, habitScheduled, setHabitCount, checkinOn, sleepOn, setCheckin, setSleepHours, addWater, projectProgress, goalProgress, moduleOn, ceoPerson, personName, nowHM } from '../model.js';
 
@@ -93,7 +95,14 @@ export async function render(root, { navigate }) {
   const sigSources = moduleOn('signals') ? db.all('signalSources') : [];
   const sigUnread = sigSources.length ? db.all('signalItems').filter(i => !i.read) : [];
   const sigDigest = sigSources.length ? db.all('signalDigests').find(x => x.date === d) : null;
-  const sigTop = [...sigUnread].sort((a, b) => String(b.date).localeCompare(String(a.date))).slice(0, 3);
+  const sigTop = [...sigUnread].filter(i => !i.dupOf).sort((a, b) => (b.importance === 3 ? 1 : 0) - (a.importance === 3 ? 1 : 0) || String(b.date).localeCompare(String(a.date))).slice(0, 3);
+  const sigHot = sigUnread.filter(i => i.importance === 3 && !i.dupOf).length;
+  // «Главное» из сводки дня: первые пункты раздела
+  const sigMain = (() => { if (!sigDigest) return []; const lines = cleanDigest(sigDigest.text).split('\n').map(l => l.trim()).filter(Boolean); let i = lines.findIndex(l => /главное/i.test(l)); const out = []; for (let k = i < 0 ? 0 : i + 1; k < lines.length && out.length < 5; k++) { const l = lines[k]; if (/^\*\*|^#/.test(l) && out.length) break; const m = l.match(/^(?:[-•*]|\d+[.)])\s+(.*)/); if (m) out.push(m[1].replace(/\*\*/g, '')); } return out; })();
+  const chatsOn = moduleOn('chats') && !!tgData();
+  const waitAll = chatsOn ? waitingForMe() : [];
+  const waitVip = waitAll.filter(w => w.priority > 0);
+  const quiet = chatsOn ? quietContacts() : [];
   const sigSrcName = (id) => sigSources.find(s => s.id === id)?.name || '';
   const ceoOpen = moduleOn('shadow') && ceo ? tasks.filter(x => !x.done && x.personId === ceo.id).sort((a, b) => (a.date || '9999').localeCompare(b.date || '9999')).slice(0, 3) : [];
   const goals = db.all('goals').filter(g => g.status === 'active');
@@ -126,7 +135,7 @@ export async function render(root, { navigate }) {
       ${checkBtn(!!t.done, `data-task="${esc(t.id)}" aria-label="Выполнено"`)}
       <div class="main" data-task-open="${esc(t.id)}" style="cursor:pointer">
         <div class="title ${t.done ? 'strike' : ''}">${esc(t.title)}</div>
-        <div class="sub row wrap" style="gap:6px">${t.time ? `<span class="mono">${esc(t.time)}</span>` : ''}${t.priority === 1 ? '<span class="pill bad">важно</span>' : ''}${t.source === 'ceo' ? '<span class="pill gold">CEO</span>' : t.personId ? `<span class="pill">${esc(personName(t.personId))}</span>` : ''}${t.projectId && projName(t.projectId) ? `<span class="pill accent ellipsis" style="max-width:160px">${esc(projName(t.projectId))}</span>` : ''}${t.estimateMin ? `<span>${esc(fmtMinutes(t.estimateMin))}</span>` : ''}</div>
+        <div class="sub row wrap" style="gap:6px">${t.time ? `<span class="mono">${esc(t.time)}</span>` : ''}${t.priority === 1 ? '<span class="pill bad">важно</span>' : ''}${t.source === 'ceo' ? '<span class="pill gold">CEO</span>' : t.personId ? `<span class="pill">${esc(personName(t.personId))}</span>` : ''}${t.link?.kind === 'tg' ? `<a class="pill" href="#/chats?chat=${esc(t.link.chat)}" data-stop title="Открыть переписку">${icon('send')} ${esc((t.link.name || 'чат').slice(0, 18))}</a>` : ''}${t.projectId && projName(t.projectId) ? `<span class="pill accent ellipsis" style="max-width:160px">${esc(projName(t.projectId))}</span>` : ''}${t.estimateMin ? `<span>${esc(fmtMinutes(t.estimateMin))}</span>` : ''}</div>
       </div>
       ${big
         ? (t.focusDate === d ? `<button type="button" class="icon-btn sm" data-unfocus="${esc(t.id)}" aria-label="Убрать из фокуса" data-tip="Убрать из фокуса">${icon('x')}</button>` : '')
@@ -198,9 +207,16 @@ export async function render(root, { navigate }) {
         </div>`; })() : '' },
     { id: 'signals', title: 'Сигналы', col: 2, html: sigSources.length ? `<div class="card">
           <div class="section-title"><h2>${icon('rss')} Сигналы</h2><button type="button" class="link" data-go="signals" data-params='{"tab":"${sigDigest ? 'digest' : 'feed'}"}'>${sigDigest ? 'сводка' : sigUnread.length ? `${sigUnread.length} ${plural(sigUnread.length, 'новая', 'новые', 'новых')}` : 'открыть'}</button></div>
-          ${sigDigest ? `<div class="small" style="white-space:pre-wrap;line-height:1.5">${esc(sigDigest.text.replace(/\*\*/g, '').split('\n').map(l => l.trim().replace(/^[-•*]\s+/, '· ')).filter(Boolean).slice(0, 4).join('\n'))}</div>`
+          ${sigDigest && sigMain.length ? `<div class="tiny muted" style="margin-bottom:4px">Главное за день</div><ul class="sg-today-main">${sigMain.map(l => `<li>${esc(l)}</li>`).join('')}</ul>${sigUnread.length ? `<div class="tiny muted" style="margin-top:6px">непрочитано ${sigUnread.length}${sigHot ? ` · важных ${sigHot}` : ''}</div>` : ''}`
+            : sigDigest ? `<div class="small" style="white-space:pre-wrap;line-height:1.5">${esc(sigDigest.text.replace(/\*\*/g, '').split('\n').map(l => l.trim().replace(/^[-•*]\s+/, '· ')).filter(Boolean).slice(0, 4).join('\n'))}</div>`
             : sigTop.length ? `<div class="sg-today-list">${sigTop.map(i => `<div class="sg-today-item"><span class="sg-src">${esc(sigSrcName(i.sourceId))}</span><span class="ellipsis">${esc(i.title)}</span></div>`).join('')}</div>${sigUnread.length > 3 ? `<div class="tiny muted" style="margin-top:6px">и ещё ${sigUnread.length - 3}</div>` : ''}`
             : '<div class="small muted">Новых записей нет</div>'}
+        </div>` : '' },
+    { id: 'chats', title: 'Чаты', col: 2, html: chatsOn && (waitAll.length || quiet.length) ? `<div class="card">
+          <div class="section-title"><h2>${icon('send')} Чаты</h2><button type="button" class="link" data-go="chats" data-params='{"tab":"waiting"}'>${waitAll.length ? `ждут ответа ${waitAll.length}` : 'открыть'}</button></div>
+          ${waitVip.length ? `<div class="tiny muted" style="margin-bottom:4px">Важные люди ждут ответа</div><div class="tg-today-list">${waitVip.slice(0, 4).map(w => `<div class="row between"><span class="ellipsis"><b>${esc(w.chat.name)}</b> <span class="muted">${esc(w.msg.text.slice(0, 70))}</span></span><span class="tiny warn" style="white-space:nowrap">${w.hours < 24 ? `${Math.round(w.hours)} ч` : `${Math.round(w.hours / 24)} ${dayWord(Math.round(w.hours / 24))}`}</span></div>`).join('')}</div>` : ''}
+          ${waitAll.length - waitVip.length ? `<div class="tiny muted" style="margin-top:${waitVip.length ? 8 : 0}px">${waitVip.length ? 'Ещё ждут' : 'Ждут ответа'}: ${esc(waitAll.filter(w => !(w.priority > 0)).slice(0, 4).map(w => w.chat.name).join(', '))}${waitAll.length - waitVip.length > 4 ? ` и ещё ${waitAll.length - waitVip.length - 4}` : ''}</div>` : ''}
+          ${quiet.length ? `<div class="tiny muted" style="margin-top:8px">Давно не общались: ${quiet.slice(0, 3).map(q => `${chatLink(q.chat) ? `<a href="${esc(chatLink(q.chat))}" target="_blank" rel="noopener" data-stop>${esc(q.chat.name)}</a>` : esc(q.chat.name)} (${q.days} ${dayWord(q.days)})`).join(', ')}</div>` : ''}
         </div>` : '' },
     { id: 'attention', title: 'Требует внимания', col: 2, html: (deadlines.length || overdue.total) ? `<div class="card">
           <div class="section-title"><h2>${icon('clock')} Требует внимания</h2>${overdue.total ? `<span class="pill bad">просрочено ${overdue.total}</span>` : ''}</div>
@@ -305,7 +321,7 @@ export async function render(root, { navigate }) {
   on(view, 'click', '[data-action="go-plan"]', () => navigate('plan'));
   on(view, 'click', '[data-capture-type]', (e, t) => { e.stopPropagation(); openCapture({ pageId: 'today', type: t.dataset.captureType }); });
   on(view, 'click', '[data-go]', (e, t) => {
-    if (e.target.closest('[data-task],[data-task-open],[data-habit],[data-water],[data-focus],[data-unfocus],[data-capture-type]')) return;
+    if (e.target.closest('[data-task],[data-task-open],[data-habit],[data-water],[data-focus],[data-unfocus],[data-capture-type],[data-stop]')) return;
     let params = {}; try { params = t.dataset.params ? JSON.parse(t.dataset.params) : {}; } catch {}
     navigate(t.dataset.go, params);
   });
@@ -315,7 +331,8 @@ export async function render(root, { navigate }) {
     toggleTask(task.id);
     if (!task.done) { const c = cheer(); if (c && Math.random() < 0.6) toast(c, 1800); }
   });
-  on(view, 'click', '[data-task-open]', async (e, t) => { const task = db.get('tasks', t.dataset.taskOpen); if (!task) return; const m = await import('./task-modal.js'); m.openTaskModal(task); });
+  on(view, 'click', '[data-stop]', (e) => e.stopPropagation());
+  on(view, 'click', '[data-task-open]', async (e, t) => { if (e.target.closest('[data-stop]')) return; const task = db.get('tasks', t.dataset.taskOpen); if (!task) return; const m = await import('./task-modal.js'); m.openTaskModal(task); });
   on(view, 'click', '[data-focus]', (e, t) => {
     const n = mine.filter(x => x.focusDate === d && !x.done).length;
     if (n >= 3) { toast('В фокусе уже три задачи — уберите одну'); return; }

@@ -31,6 +31,60 @@ TG_LOCK = threading.Lock()   # один сбор Telegram за раз
 WHOOP_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36 ULTIMATE/1.0'
 
 
+# Сбор Telegram по расписанию, пока запущен сервер: раз в TG_AUTO_MIN минут (0 — выключить: ULTIMATE_TG_AUTO=0).
+# Сам collect.py дополнительно не запускается чаще раза в 10 минут и держит паузы между запросами к Telegram.
+TG_AUTO_MIN = int(os.environ.get('ULTIMATE_TG_AUTO', '45') or 0)
+TG_AUTO = {'last': None, 'error': None}
+
+
+def tg_collect(timeout=300):
+    """Запустить tg/collect.py (один сбор за раз). Возвращает словарь ответа."""
+    tg_dir = os.path.join(ROOT, 'tg')
+    py = os.path.join(tg_dir, '.venv', 'bin', 'python')
+    if not os.path.exists(py):
+        return {'ok': False, 'error': 'Сначала запустите tg/login.command'}
+    if not TG_LOCK.acquire(blocking=False):
+        return {'ok': False, 'error': 'Сбор уже идёт', 'busy': True}
+    try:
+        r = subprocess.run([py, os.path.join(tg_dir, 'collect.py')], capture_output=True, text=True, timeout=timeout, cwd=tg_dir)
+        line = (r.stdout.strip().splitlines() or ['{}'])[-1]
+        try:
+            return json.loads(line)
+        except Exception:
+            return {'ok': False, 'error': (r.stderr.strip().splitlines() or [line or 'нет ответа'])[-1][:300]}
+    except subprocess.TimeoutExpired:
+        return {'ok': False, 'error': 'Сбор занял больше 5 минут и был остановлен'}
+    finally:
+        TG_LOCK.release()
+
+
+def tg_auto_loop():
+    """Фоновый сбор: ждёт, пока выполнен вход, и собирает новые сообщения каждые TG_AUTO_MIN минут."""
+    tg_dir = os.path.join(ROOT, 'tg')
+    data_file = os.path.join(tg_dir, 'data', 'messages.json')
+    time.sleep(90)   # дать приложению открыться и, если нужно, запустить сбор самому
+    while True:
+        try:
+            ready = os.path.exists(os.path.join(tg_dir, 'ultimate.session')) and os.path.exists(os.path.join(tg_dir, '.venv', 'bin', 'python'))
+            if ready:
+                age = None
+                try:
+                    with open(data_file, encoding='utf-8') as f:
+                        synced = json.load(f).get('syncedAt')
+                    if synced:
+                        from datetime import datetime, timezone
+                        age = (datetime.now(timezone.utc) - datetime.fromisoformat(synced)).total_seconds() / 60
+                except Exception:
+                    age = None
+                if age is None or age >= TG_AUTO_MIN:
+                    r = tg_collect()
+                    TG_AUTO['last'] = time.strftime('%Y-%m-%dT%H:%M:%S')
+                    TG_AUTO['error'] = None if r.get('ok') else (r.get('error') or 'ошибка')[:200]
+        except Exception as e:
+            TG_AUTO['error'] = f'{e.__class__.__name__}: {e}'[:200]
+        time.sleep(60)
+
+
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *a, **kw):
         super().__init__(*a, directory=ROOT, **kw)
@@ -122,7 +176,8 @@ class Handler(SimpleHTTPRequestHandler):
         if action == 'status':
             info = {'ok': True, 'configured': os.path.exists(os.path.join(tg_dir, 'config.json')),
                     'session': os.path.exists(os.path.join(tg_dir, 'ultimate.session')), 'env': os.path.exists(py),
-                    'syncedAt': None, 'chats': 0, 'messages': 0, 'busy': TG_LOCK.locked()}
+                    'syncedAt': None, 'chats': 0, 'messages': 0, 'busy': TG_LOCK.locked(),
+                    'auto': TG_AUTO_MIN if TG_AUTO_MIN else None, 'autoLast': TG_AUTO['last'], 'autoError': TG_AUTO['error']}
             try:
                 with open(data_file, encoding='utf-8') as f:
                     d = json.load(f)
@@ -145,19 +200,7 @@ class Handler(SimpleHTTPRequestHandler):
         if action == 'sync':
             if not os.path.exists(py):
                 return self._json(200, {'ok': False, 'error': 'Сначала запустите tg/login.command'})
-            if not TG_LOCK.acquire(blocking=False):
-                return self._json(200, {'ok': False, 'error': 'Сбор уже идёт', 'busy': True})
-            try:
-                r = subprocess.run([py, os.path.join(tg_dir, 'collect.py')], capture_output=True, text=True, timeout=300, cwd=tg_dir)
-                line = (r.stdout.strip().splitlines() or ['{}'])[-1]
-                try:
-                    return self._json(200, json.loads(line))
-                except Exception:
-                    return self._json(200, {'ok': False, 'error': (r.stderr.strip().splitlines() or [line or 'нет ответа'])[-1][:300]})
-            except subprocess.TimeoutExpired:
-                return self._json(200, {'ok': False, 'error': 'Сбор занял больше 5 минут и был остановлен'})
-            finally:
-                TG_LOCK.release()
+            return self._json(200, tg_collect())
         return self._json(404, {'error': 'нет такого действия'})
 
     def do_POST(self):
@@ -436,6 +479,8 @@ class Whoop:
 if __name__ == '__main__':
     srv = ThreadingHTTPServer(('127.0.0.1', PORT), Handler)
     print(f'ULTIMATE: http://127.0.0.1:{PORT}/')
+    if TG_AUTO_MIN > 0:
+        threading.Thread(target=tg_auto_loop, daemon=True).start()
     try:
         srv.serve_forever()
     except KeyboardInterrupt:

@@ -263,6 +263,7 @@ db.subscribe((col) => {
 });
 
 window.addEventListener('hashchange', () => renderPage(false));
+window.addEventListener('ultimate:tg', () => { if (current?.id === 'today') { clearTimeout(rerenderTimer); rerenderTimer = setTimeout(() => renderPage(false), 30); } });   // переписка подгрузилась — обновить блок на главной
 window.addEventListener('ultimate:ai', () => { clearTimeout(rerenderTimer); rerenderTimer = setTimeout(() => renderPage(false), 30); });   // доступность помощника изменилась — обновить карточки
 window.addEventListener('resize', () => moveIndicator(current?.id));
 if (document.fonts?.ready) document.fonts.ready.then(() => moveIndicator(current?.id));
@@ -289,6 +290,8 @@ paintSkeleton();
   watchCelebrations();
   initSync();
   import('./whoop.js').then(m => m.autoSync()).catch(() => {});
+  if (moduleState('chats') !== 'off') import('./tg.js').then(m => m.autoLoad()).catch(() => {});
+  if (moduleState('signals') !== 'off' && db.all('signalSources').length) import('./signals-ai.js').then(m => m.scheduleMorningRun()).catch(() => {});
   initAiPanel();
   let storageWarned = false;
   window.addEventListener('ultimate:storage', () => { if (storageWarned) return; storageWarned = true; toast('Браузер не даёт сохранить данные в базу — сделайте экспорт в Настройках', 6000); });

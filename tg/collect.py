@@ -117,6 +117,7 @@ async def main(mode):
 
     added = 0
     chats_seen = 0
+    seen = set()                                # чаты из списка диалогов в этом сборе
     names = {}                                  # имена собеседников из списка диалогов — без лишних запросов
     dialogs = []
     async for dlg in client.iter_dialogs(limit=MAX_CHATS):
@@ -142,14 +143,16 @@ async def main(mode):
             name = ent.title
         else:
             continue
-        if dlg.date and dlg.date < keep_edge:
-            continue                   # давно молчащий чат
         cid = str(dlg.id)
         chats_seen += 1
+        seen.add(cid)
         chat = data['chats'].get(cid, {})
         chat.update({'id': cid, 'name': name, 'kind': kind, 'unread': dlg.unread_count or 0,
-                     'lastAt': dlg.date.isoformat() if dlg.date else None})
+                     'lastAt': dlg.date.isoformat() if dlg.date else None,
+                     'username': getattr(ent, 'username', None) or None})
         data['chats'][cid] = chat
+        if dlg.date and dlg.date < keep_edge:
+            continue                   # давно молчащий чат: имя и дату запомнили (для «давно не общались»), сообщения не читаем
         min_id = last_id.get(cid, 0)
         if min_id and dlg.message and dlg.message.id <= min_id:
             continue                   # в этом чате ничего нового — запрос не нужен
@@ -190,7 +193,7 @@ async def main(mode):
 
     # Чистка: старые сообщения и чаты, которых больше нет в списке
     data['messages'] = [m for m in data['messages'] if m['date'] >= keep_edge.isoformat()]
-    live = {m['chat'] for m in data['messages']}
+    live = {m['chat'] for m in data['messages']} | seen
     data['chats'] = {k: v for k, v in data['chats'].items() if k in live}
     data['messages'].sort(key=lambda m: m['date'])
     data['syncedAt'] = now.isoformat()

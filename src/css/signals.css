@@ -66,3 +66,27 @@ details.sg-past > summary::-webkit-details-marker, details.sg-adv > summary::-we
   .sg-src { flex-direction: column; }
   .sg-src > .row { align-self: flex-end; }
 }
+
+/* Темы как вкладки, «ещё N», голоса, пересказ, наборы */
+.sg-topic-tabs { margin: 0 0 12px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.sg-topic-tabs .tabs { flex-wrap: nowrap; width: max-content; min-width: 100%; }
+.sg-more { display: flex; align-items: center; gap: 6px; width: 100%; justify-content: center; padding: 9px 12px; margin: 2px 0 8px; border: 1px dashed var(--line-2); border-radius: 12px; background: transparent; color: var(--fg-2); font: inherit; font-size: 12.5px; cursor: pointer; }
+.sg-more:hover { color: var(--fg); border-color: var(--accent); }
+.sg-vote { display: inline-flex; gap: 4px; align-items: center; }
+.chip.xs { padding: 3px 9px; font-size: 11.5px; min-height: 26px; }
+.chip.xs.active.good { border-color: var(--good); color: var(--good); }
+.sg-item.is-useful { border-left: 3px solid var(--good); }
+.sg-item.is-useless { opacity: .5; }
+.sg-brief { font-size: 13px; line-height: 1.5; color: var(--fg); background: color-mix(in srgb, var(--accent) 8%, transparent); border-left: 2px solid var(--accent); padding: 6px 10px; border-radius: 0 10px 10px 0; display: flex; flex-direction: column; gap: 3px; }
+.sg-brief.muted { color: var(--fg-3); }
+.sg-presets { display: flex; flex-direction: column; gap: 8px; }
+.sg-preset { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; }
+.sg-preset .main { flex: 1; min-width: 0; }
+.sg-preset .btn.sm { white-space: nowrap; }
+.sg-src-stats b { font-weight: 600; }
+@media (max-width: 860px) {
+  .sg-preset { flex-direction: column; align-items: stretch; }
+  .sg-vote { width: 100%; }
+}
+.sg-today-main { margin: 0; padding-left: 18px; font-size: 13px; line-height: 1.5; }
+.sg-today-main li { margin-bottom: 4px; }

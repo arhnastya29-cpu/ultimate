@@ -66,6 +66,8 @@ export const DEFAULT_SETTINGS = {
   signalsHours: 24,         // за какой период собирать сводку
   signalsTopics: null,      // свои темы для разметки (null — список по умолчанию из signals.js)
   signalsAutoTag: true,     // размечать новые записи моделью после обновления ленты
+  signalsAutoDigest: true,  // утренняя сводка сама при первом открытии за день
+  signalsWeekly: true,      // обзор недели по понедельникам
 };
 
 const DB_NAME = 'lifeos';

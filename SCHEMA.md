@@ -71,9 +71,10 @@ export async function render(root, { params, navigate, page }) {
 
 ### Сигналы (новости)
 - `signalSources` — `{ id, name, kind: 'rss'|'telegram'|'site', url, feedUrl, tag, paused, lastFetchAt, lastError, lastCount, siteUrl, renamed }`.
-- `signalItems` — `{ id: 'sig_'+hash(источник+ссылка), sourceId, title, link, date, summary, read, saved, fetchedAt }`; удалённые попадают в tombstones и не возвращаются при обновлении.
-- `signalDigests` — `{ id, date, period, text, itemIds, provider }` — одна сводка на день.
-- Настройки: `signalsProxy` (auto | local | direct | шаблон с `{url}`), `signalsFocus`, `signalsKeepDays`, `signalsHours`.
+- `signalItems` — `{ id: 'sig_'+hash(источник+ссылка), sourceId, title, link, date, summary, read, saved, fetchedAt, tagged, topic, importance 1–3, dupOf, vote 1|-1|null, brief, briefAt }`; удалённые попадают в tombstones и не возвращаются при обновлении.
+- `signalDigests` — `{ id, date, kind 'day'|'week', period, text, itemIds, provider }` — одна сводка на день и одна на неделю (date = понедельник).
+- `tasks.link` — необязательная ссылка на источник задачи: `{ kind: 'tg', chat, name, msg, url }` из Чатов или `{ kind: 'url', url, label }` из Сигналов.
+- Настройки: `signalsProxy` (auto | local | direct | шаблон с `{url}`), `signalsFocus`, `signalsKeepDays`, `signalsHours`, `signalsTopics`, `signalsAutoTag`, `signalsAutoDigest`, `signalsWeekly`.
 
 ## Единые модели и миграции (с v21)
 

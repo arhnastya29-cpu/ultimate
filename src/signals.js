@@ -4,8 +4,9 @@
 // Данные:
 //   signalSources: { id, name, kind: 'rss'|'telegram'|'site', url (что ввёл пользователь), feedUrl (откуда читаем),
 //                    tag, paused, lastFetchAt, lastError, lastCount, siteUrl, renamed }
-//   signalItems:   { id (детерминированный: источник + ссылка), sourceId, title, link, date, summary, read, saved, fetchedAt }
-//   signalDigests: { id, date, period, text, itemIds, provider }
+//   signalItems:   { id (детерминированный: источник + ссылка), sourceId, title, link, date, summary, read, saved, fetchedAt,
+//                    tagged, topic, importance 1–3, dupOf, vote 1|-1|null («полезно»/«не полезно»), brief (пересказ статьи моделью) }
+//   signalDigests: { id, date, kind 'day'|'week', period, text, itemIds, provider }
 //
 // Браузер не может читать чужие сайты напрямую (CORS), поэтому загрузка идёт через «мост»:
 //   1) локальный сервер ULTIMATE (serve.py, когда приложение открыто через start.command) — самый надёжный;
@@ -14,13 +15,49 @@
 // В настройках можно задать свой адрес моста (signalsProxy): 'auto' | 'local' | 'direct' | шаблон с {url}.
 
 import { db } from './db.js';
-import { today, addDays } from './ui.js';
+import { today, addDays, startOfWeek } from './ui.js';
 
 export const KINDS = { rss: 'Лента', telegram: 'Telegram', site: 'Сайт' };
 // Темы для разметки новостей моделью; пользователь может задать свои в разделе (settings.signalsTopics).
 export const DEFAULT_TOPICS = ['Политика', 'iGaming', 'Регуляция', 'Апдейты', 'Идеи бизнесов', 'Рынок', 'AI', 'Другое'];
 export function topics() { const t = db.settings().signalsTopics; return Array.isArray(t) && t.length ? t : DEFAULT_TOPICS; }
 export const IMPORTANCE = { 3: 'важно', 2: '', 1: 'фон' };
+// Готовые наборы источников: добавляются одним нажатием, каждый адрес проверяется при добавлении.
+export const PRESETS = [
+  { id: 'igaming', name: 'iGaming', desc: 'отраслевые издания: сделки, запуски, рынки', items: [
+    { name: 'iGaming Business', url: 'https://igamingbusiness.com/feed/' },
+    { name: 'SBC News', url: 'https://sbcnews.co.uk/feed/' },
+    { name: 'CasinoBeats', url: 'https://casinobeats.com/feed/' },
+    { name: 'iGaming NEXT', url: 'https://igamingnext.com/feed/' },
+    { name: 'European Gaming', url: 'https://europeangaming.eu/portal/feed/' },
+    { name: 'Yogonet', url: 'https://www.yogonet.com/international/' },
+    { name: '@igaming_news', url: '@igaming_news' },
+  ] },
+  { id: 'regulation', name: 'Регуляция', desc: 'регуляторы и лицензии: UKGC, MGA, KSA, законы', items: [
+    { name: 'iGB · Legal & compliance', url: 'https://igamingbusiness.com/category/legal-compliance/feed/' },
+    { name: 'UK Gambling Commission', url: 'https://www.gamblingcommission.gov.uk/news' },
+    { name: 'Malta Gaming Authority', url: 'https://www.mga.org.mt/news/' },
+    { name: 'Kansspelautoriteit (NL)', url: 'https://kansspelautoriteit.nl/nieuws/' },
+    { name: 'Gaming Intelligence', url: 'https://www.gamingintelligence.com/' },
+  ] },
+  { id: 'business', name: 'Бизнес и идеи', desc: 'стартапы, продукты, рынок', items: [
+    { name: 'vc.ru', url: 'https://vc.ru/rss' },
+    { name: 'RB.RU', url: 'https://rb.ru/feeds/all/' },
+    { name: 'TechCrunch', url: 'https://techcrunch.com/feed/' },
+    { name: 'Product Hunt', url: 'https://www.producthunt.com/feed' },
+    { name: 'Hacker News', url: 'https://news.ycombinator.com/rss' },
+  ] },
+  { id: 'ai', name: 'AI', desc: 'модели, инструменты, исследования', items: [
+    { name: 'The Verge · AI', url: 'https://www.theverge.com/rss/ai-artificial-intelligence/index.xml' },
+    { name: 'MIT Technology Review', url: 'https://www.technologyreview.com/feed/' },
+    { name: 'Hugging Face Blog', url: 'https://huggingface.co/blog/feed.xml' },
+  ] },
+];
+// «Что мне важно» (settings.signalsFocus): фразы через запятую. Запись «по фокусу», если фраза встречается в заголовке или тексте.
+export function focusTerms() { return String(db.settings().signalsFocus || '').split(/[,;\n]/).map(x => x.trim().toLowerCase()).filter(x => x.length >= 3); }
+export function matchesFocus(i, terms = focusTerms()) { if (!terms.length) return false; const t = `${i.title || ''} ${i.summary || ''}`.toLowerCase(); return terms.some(x => t.includes(x)); }
+// Записи, которые стоит показать первыми: важные, по фокусу, отмеченные полезными.
+export const isTop = (i, terms = focusTerms()) => i.importance === 3 || i.vote === 1 || matchesFocus(i, terms);
 const PUBLIC_PROXIES = [
   'https://api.allorigins.win/raw?url={url}',
   'https://api.codetabs.com/v1/proxy?quest={url}',
@@ -229,6 +266,26 @@ export const isPrimary = (i) => !i.dupOf;                                  // н
 export const unreadCount = () => items().filter(i => !i.read && isPrimary(i)).length;
 export const untagged = () => items().filter(i => !i.tagged && isPrimary(i));
 export const dupsOf = (id) => items().filter(i => i.dupOf === id);
+// «Полезно» / «не полезно». Неполезное сразу считается прочитанным и уходит из непрочитанного; голоса учитываются
+// при разметке новых записей (модель видит примеры) и в оценке источников.
+export function vote(id, v) {
+  const it = db.get('signalItems', id); if (!it) return;
+  const next = it.vote === v ? null : v;
+  db.update('signalItems', id, { vote: next, ...(next === -1 ? { read: true } : {}) });
+  return next;
+}
+export const usefulItems = () => items().filter(i => i.vote === 1);
+export const votedExamples = (n = 8) => ({ up: items().filter(i => i.vote === 1).sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt))).slice(0, n), down: items().filter(i => i.vote === -1).sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt))).slice(0, n) });
+// Качество источника по его записям за время хранения: сколько важных и полезных, сколько «фона» и неполезных.
+export function sourceStats(id) {
+  const list = items().filter(i => i.sourceId === id && isPrimary(i));
+  const st = { total: list.length, hot: 0, low: 0, up: 0, down: 0, tagged: 0 };
+  for (const i of list) { if (i.tagged) st.tagged++; if (i.importance === 3) st.hot++; if (i.importance === 1) st.low++; if (i.vote === 1) st.up++; if (i.vote === -1) st.down++; }
+  const good = st.hot + st.up, bad = st.low + st.down;
+  st.noisy = st.tagged >= 8 && good === 0 && bad >= st.tagged * 0.5 || st.down >= 3 && st.down > st.up * 2;
+  st.strong = good >= 3 && good >= bad;
+  return st;
+}
 // Применить разметку: { id: { topic, importance, dupOf } }. Дубли отмечаются прочитанными, чтобы не считались новыми.
 export function applyTags(map) {
   const list = topics();
@@ -310,7 +367,9 @@ export function staleFor(ms = 60 * 60 * 1000) { const t = lastRefreshAt(); retur
 export function digestInput({ hours = 24, limit = 45, maxChars = 11000 } = {}) {
   const since = Date.now() - hours * 3600 * 1000;
   const srcById = new Map(sources().map(s => [s.id, s]));
-  const live = items().filter(i => srcById.has(i.sourceId) && !srcById.get(i.sourceId).paused && isPrimary(i)).sort((a, b) => (Number(b.importance) || 2) - (Number(a.importance) || 2) || String(b.date).localeCompare(String(a.date)));
+  const terms = focusTerms();
+  const rank = (i) => (i.vote === -1 ? -1 : 0) + (Number(i.importance) || 2) + (matchesFocus(i, terms) ? 1.5 : 0) + (i.vote === 1 ? 0.5 : 0);
+  const live = items().filter(i => srcById.has(i.sourceId) && !srcById.get(i.sourceId).paused && isPrimary(i)).sort((a, b) => rank(b) - rank(a) || String(b.date).localeCompare(String(a.date)));
   let list = live.filter(i => new Date(i.date || i.fetchedAt).getTime() >= since);
   let period = `${hours}h`;
   if (list.length < 8) { list = live; period = 'all'; }   // мало за период — берём последние записи вообще
@@ -325,22 +384,39 @@ export function digestInput({ hours = 24, limit = 45, maxChars = 11000 } = {}) {
   }
   let text = ''; const used = [];
   for (const [n, i] of picked.entries()) {
-    const line = `${n + 1}. [${srcById.get(i.sourceId)?.name || '?'}]${i.topic ? ` {${i.topic}${i.importance === 3 ? ', важно' : ''}}` : ''} ${i.title}${i.summary && i.summary !== i.title ? ` — ${cut(i.summary, 220)}` : ''}${dupsOf(i.id).length ? ` (ещё ${dupsOf(i.id).length} источн.)` : ''}\n`;
+    const line = `${n + 1}. [${srcById.get(i.sourceId)?.name || '?'}]${i.topic || matchesFocus(i, terms) ? ` {${[i.topic, i.importance === 3 ? 'важно' : '', matchesFocus(i, terms) ? 'по фокусу' : ''].filter(Boolean).join(', ')}}` : ''} ${i.title}${i.summary && i.summary !== i.title ? ` — ${cut(i.summary, 220)}` : ''}${dupsOf(i.id).length ? ` (ещё ${dupsOf(i.id).length} источн.)` : ''}\n`;
     if (text.length + line.length > maxChars) break;
     text += line; used.push(i);
   }
   return { text, items: used, period };
 }
 
-export const digests = () => [...db.all('signalDigests')].sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
-export const todayDigest = () => digests().find(d => d.date === today()) || null;
-export function saveDigest({ text, itemIds, provider, period }) {
-  const ex = todayDigest();
-  const rec = { date: today(), text, itemIds, provider, period };
+export const digests = (kind = 'day') => [...db.all('signalDigests')].filter(d => (d.kind || 'day') === kind).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+export const todayDigest = () => digests('day').find(d => d.date === today()) || null;
+// Недельная сводка привязана к понедельнику текущей недели
+export const weekDigest = (d = today()) => digests('week').find(x => x.date === startOfWeek(d)) || null;
+export function saveDigest({ text, itemIds, provider, period, kind = 'day' }) {
+  const ex = kind === 'week' ? weekDigest() : todayDigest();
+  const rec = { date: kind === 'week' ? startOfWeek(today()) : today(), kind, text, itemIds, provider, period };
   return ex ? db.update('signalDigests', ex.id, rec) : db.add('signalDigests', rec);
 }
 
-export function digestPrompt(inputText, { focus = '', name = '' } = {}) {
+// Модель иногда копирует служебные пометки из входа: «[Источник] {Тема, важно}» → «(Источник)». Применяется к готовому тексту и при показе старых сводок.
+export const cleanDigest = (t) => String(t || '').replace(/\s*\{[^}\n]*\}/g, '').replace(/\[([^\]\n]{1,60})\]/g, '($1)').replace(/\(\s*\)/g, '').replace(/[ \t]+\n/g, '\n');
+
+export function digestPrompt(inputText, { focus = '', name = '', weekly = false } = {}) {
+  if (weekly) return `Ты — личный аналитик новостей${name ? ` для ${name}` : ''}. Ниже — записи за неделю из источников, которые пользователь выбрал сам (в квадратных скобках — источник, в фигурных — тема и пометки).
+${focus ? `Что для пользователя важно в первую очередь: ${focus}.\n` : ''}
+Составь обзор недели по-русски в таком виде:
+
+**Что изменилось за неделю** — по темам: для каждой темы, где были события, одна строка «**Тема** — суть изменений за неделю, 1–2 фразы» (источники в скобках). Не больше 6 тем.
+**Тренд недели** — 1–2 фразы: что повторяется или набирает силу.
+**Что это значит для меня** — 2–3 пункта: что учесть или сделать на следующей неделе${focus ? ', с учётом интересов пользователя' : ''}.
+
+Правила: не выдумывай фактов; объединяй повторы и мелкие новости в одну мысль; не пересказывай всё подряд — только то, что меняет картину; без вступлений и заключения; пометки в квадратных и фигурных скобках в ответ не копируй — источник называй словами в круглых скобках.
+
+Записи:
+${inputText}`;
   return `Ты — личный редактор новостей${name ? ` для ${name}` : ''}. Ниже — свежие записи из источников, которые пользователь выбрал сам (в квадратных скобках — название источника).
 ${focus ? `Что для пользователя важно в первую очередь: ${focus}.\n` : ''}
 Составь короткую сводку по-русски в таком виде:
@@ -349,7 +425,7 @@ ${focus ? `Что для пользователя важно в первую о�
 **Ещё заметить** — до 5 пунктов по одной строке.
 **Что это значит для меня** — 1–2 фразы: на что обратить внимание или что стоит сделать${focus ? ', учитывая интересы пользователя' : ''}.
 
-Правила: не выдумывай фактов, которых нет в записях; не повторяй одно и то же событие дважды; объединяй дубли из разных источников; в фигурных скобках дана тема и пометка «важно» — важное ставь в «Главное»; без вступлений и без заключения; если записей мало или они пустые — так и скажи одной строкой.
+Правила: не выдумывай фактов, которых нет в записях; не повторяй одно и то же событие дважды; объединяй дубли из разных источников; в фигурных скобках даны тема и пометки «важно» и «по фокусу» (совпадает с интересами пользователя) — такое ставь в «Главное», но сами скобки с пометками в ответ не копируй (источник — словами в круглых скобках); без вступлений и без заключения; если записей мало или они пустые — так и скажи одной строкой.
 
 Записи:
 ${inputText}`;

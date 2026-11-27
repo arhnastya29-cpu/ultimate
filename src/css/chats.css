@@ -29,3 +29,18 @@
   .tg-row { flex-direction: column; }
   .tg-row .btn.sm { align-self: flex-start; min-height: 36px; }
 }
+/* Важные люди, черновики, затишье, группы, переписка */
+.tg-sub { font-size: 11px; color: var(--fg-3); letter-spacing: 0.12em; text-transform: uppercase; font-weight: 600; margin: 6px 0 2px; }
+.tg-wait-item.is-vip { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+.tg-wait-item .tg-name.link { font-weight: 600; font-size: 14px; color: var(--fg); background: none; border: 0; padding: 0; cursor: pointer; text-align: left; }
+.tg-wait-item .tg-name.link:hover { color: var(--accent); }
+.tg-prio { display: inline-flex; gap: 4px; align-items: center; }
+.tg-prio .icon-btn.on { color: var(--warn); border-color: var(--warn); }
+.tg-draft { border: 1px dashed var(--line-2); border-radius: 12px; padding: 10px 12px; background: color-mix(in srgb, var(--accent) 6%, transparent); }
+.tg-draft-text { font-size: 13.5px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+.tg-chat.is-vip .main .bold { color: var(--fg); }
+.tg-chat .main .link { background: none; border: 0; padding: 0; font: inherit; font-weight: 600; color: var(--fg); cursor: pointer; display: block; max-width: 100%; }
+.tg-chat .main .link:hover { color: var(--accent); }
+.tg-thread.tg-full { border-left: 0; padding-left: 0; gap: 6px; max-height: 70vh; overflow: auto; }
+.tg-thread.tg-full .tg-msg.is-me { color: var(--fg); background: color-mix(in srgb, var(--accent) 8%, transparent); border-radius: 10px; padding: 4px 8px; }
+.tg-row .main b { font-weight: 600; }
